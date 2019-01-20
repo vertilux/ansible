@@ -1,0 +1,24 @@
+---
+- hosts: load-balancers
+  remote_user: deploy
+  become: yes
+  tasks:
+  - name: ensure collectd is at the latest version
+    apt:
+      name: collectd
+      state: latest
+  - name: write the config file
+    template:
+      src: /Users/lepepe/Documents/apps/vertilux_ltd/ansible-playbooks/collectd.conf
+      dest: /etc/collectd/collectd.conf
+    notify:
+    - restart collectd
+  - name: ensure collectd is running
+    service:
+      name: collectd
+      state: started
+  handlers:
+    - name: restart collectd
+      service:
+        name: collectd
+        state: restarted
