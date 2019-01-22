@@ -1,5 +1,5 @@
 ---
-- hosts: load-balancers
+- hosts: production
   remote_user: deploy
   tasks:
     - name: Test connection

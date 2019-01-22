@@ -1,0 +1,23 @@
+---
+- hosts: web-servers
+  remote_user: deploy
+  tasks:
+  - stat:
+      path: /home/deploy/vertilux-accpac/current/tmp/maintenance.yml
+    register: result
+
+  - block:
+    - debug:
+        msg: "ERP maintenance mode is OFF"
+    # Setting rails app to maintenance mode
+    - name: setting web servers to maintenance mode to ON
+      command: "bundle exec rake -f /home/deploy/vertilux-accpac/current RAILS_ENV=production maintenance:start"
+    when: result.stat.exists == false
+
+  - block:
+    - debug:
+        msg: "ERP maintenance mode is ON"
+    # Setting rails app to maintenance mode
+    - name: setting web servers to maintenance mode to OFF
+      command: "bundle exec rake -f /home/deploy/vertilux-accpac/current RAILS_ENV=production maintenance:end"
+    when: result.stat.exists == true
