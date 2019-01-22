@@ -27,4 +27,15 @@ db
 `-b, --become` run operations with become (does not imply password prompting)   
 `-K, --ask-become-pass` ask for privilegue escalation password   
 
-#### Run operations in the background
+#### Update servers asynchronously
+`ansible multi -b -B 3600 -a "apt -y update` this command will return:   
+```
+127.10.15.1 | success >> {
+    "ansible_job_id": "763350539037",
+    "results_file: "/root/.ansible_async/763350539037",
+    "started": 1
+}
+```
+**Updating servers with Ansible**
+`ansible production -m apt -a "upgrade=yes update_cache=yes" -u -b -K`   
+Then I can reboot all servers with `ansible production -a "reboot" -s`.
