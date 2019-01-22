@@ -37,5 +37,5 @@ db
 }
 ```
 **Updating servers with Ansible**
-`ansible production -m apt -a "upgrade=yes update_cache=yes" -u -b -K`   
+`ansible production -m apt -a "upgrade=yes update_cache=yes" -u deploy -b -K`   
 Then I can reboot all servers with `ansible production -a "reboot" -s`.
