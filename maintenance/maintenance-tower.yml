@@ -1,25 +1,26 @@
----
-  tasks:
-  - stat:
-      path: /home/deploy/vertilux-accpac/current/tmp/maintenance.yml
-    register: result
+- name: Hello World Sample
+  hosts: all
+    tasks:
+    - stat:
+        path: /home/deploy/vertilux-accpac/current/tmp/maintenance.yml
+      register: result
 
-  - block:
-    - debug:
-        msg: "ERP maintenance mode is OFF"
-    # Setting rails app to maintenance mode
-    - name: setting web servers to maintenance mode to ON
-      command: /bin/bash -l -c 'cd /home/deploy/vertilux-accpac/current && bundle exec rake RAILS_ENV=production maintenance:start'
-      environment:
-        PATH: "/home/deploy/.rbenv/plugins/ruby-build/bin:/home/deploy/.rbenv/bin:/home/deploy/.rbenv/plugins/ruby-build/bin:/home/deploy/.rbenv/shims:/home/deploy/.rbenv/bin:/usr/local/sbin:/usr/local/bin:/usr/local/sbin:/usr/bin:/sbin:/bin:/usr/games"
-    when: result.stat.exists == false
+    - block:
+      - debug:
+          msg: "ERP maintenance mode is OFF"
+      # Setting rails app to maintenance mode
+      - name: setting web servers to maintenance mode to ON
+        command: /bin/bash -l -c 'cd /home/deploy/vertilux-accpac/current && bundle exec rake RAILS_ENV=production maintenance:start'
+        environment:
+          PATH: "/home/deploy/.rbenv/plugins/ruby-build/bin:/home/deploy/.rbenv/bin:/home/deploy/.rbenv/plugins/ruby-build/bin:/home/deploy/.rbenv/shims:/home/deploy/.rbenv/bin:/usr/local/sbin:/usr/local/bin:/usr/local/sbin:/usr/bin:/sbin:/bin:/usr/games"
+      when: result.stat.exists == false
 
-  - block:
-    - debug:
-        msg: "ERP maintenance mode is ON"
-    # Setting rails app to maintenance mode
-    - name: setting web servers to maintenance mode to OFF
-      command: /bin/bash -l -c 'cd /home/deploy/vertilux-accpac/current && bundle exec rake RAILS_ENV=production maintenance:end'
-      environment:
-        PATH: "/home/deploy/.rbenv/plugins/ruby-build/bin:/home/deploy/.rbenv/bin:/home/deploy/.rbenv/plugins/ruby-build/bin:/home/deploy/.rbenv/shims:/home/deploy/.rbenv/bin:/usr/local/sbin:/usr/local/bin:/usr/local/sbin:/usr/bin:/sbin:/bin:/usr/games"
-    when: result.stat.exists == true
+    - block:
+      - debug:
+          msg: "ERP maintenance mode is ON"
+      # Setting rails app to maintenance mode
+      - name: setting web servers to maintenance mode to OFF
+        command: /bin/bash -l -c 'cd /home/deploy/vertilux-accpac/current && bundle exec rake RAILS_ENV=production maintenance:end'
+        environment:
+          PATH: "/home/deploy/.rbenv/plugins/ruby-build/bin:/home/deploy/.rbenv/bin:/home/deploy/.rbenv/plugins/ruby-build/bin:/home/deploy/.rbenv/shims:/home/deploy/.rbenv/bin:/usr/local/sbin:/usr/local/bin:/usr/local/sbin:/usr/bin:/sbin:/bin:/usr/games"
+      when: result.stat.exists == true
