@@ -1,0 +1,9 @@
+---
+- hosts: all
+  become: yes
+  tasks:
+    - name: Restart queue processing job Sidekiq
+      service:
+        name: sidekiq
+        state: restart
+      #command: /bin/bash -l -c  'systemctl restart sidekiq.service'
