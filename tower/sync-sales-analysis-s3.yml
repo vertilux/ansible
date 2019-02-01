@@ -1,0 +1,12 @@
+- hosts: all
+  tasks:
+  - name: Upload files
+    s3_sync:
+      aws_access_key: '{{aws_access_key}}'
+      aws_secret_key: '{{aws_secret_key}}'
+      bucket: '{{bucket}}'
+      file_root: "/home/deploy/vertilux-accpac/current/public/json/"
+      key_prefix: "json"
+      permission: public-read
+      include: "*"
+      #exclude: "*.txt,.*"
