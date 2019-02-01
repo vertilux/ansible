@@ -2,4 +2,4 @@
 - hosts: all
   tasks:
     - name: Restart rails (Passenger) web application
-      command: /bin/bash -l -c  'touch /home/deploy/vertilux-accpac/current/tmp/restart.txt'
+      command: /bin/bash -l -c  'touch /home/deploy/{{site}}/current/tmp/restart.txt'
