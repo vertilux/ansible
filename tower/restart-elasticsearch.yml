@@ -1,0 +1,8 @@
+---
+- hosts: all
+  become: yes
+  tasks:
+    - name: Restart search engine Elasticsearch
+      service:
+        name: elasticsearch
+        state: restarted
