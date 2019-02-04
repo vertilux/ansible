@@ -1,0 +1,7 @@
+---
+- hosts: all
+  tasks:
+  - name: "Ensure {{item}} is at the latest version"
+    apt:
+      name: ['python-dateutil', 'python3-dateutil', 'python-boto','python-boto3']
+      state: latest
