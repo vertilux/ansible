@@ -15,7 +15,7 @@
     register: result
 
   - block:
-    - name: Send notification message via Slack all options
+    - name: Send notification message via Slack all options on FAILED
       slack:
         token: '{{slack_token}}'
         color: danger
@@ -23,7 +23,7 @@
     when: result.failed == true
 
   - block:
-    - name: Send notification message via Slack all options
+    - name: Send notification message via Slack all options on SUCCESS
       slack:
         token: '{{slack_token}}'
         color: good
