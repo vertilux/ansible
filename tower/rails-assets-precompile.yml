@@ -1,0 +1,6 @@
+- hosts: all
+  tasks:
+    - name: Running rake assets precompile
+      command: /bin/bash -l -c 'cd /home/deploy/vertilux-accpac/current && bundle exec rake assets:precompile RAILS_ENV=production'
+      environment:
+        PATH: "/home/deploy/.rbenv/plugins/ruby-build/bin:/home/deploy/.rbenv/bin:/home/deploy/.rbenv/plugins/ruby-build/bin:/home/deploy/.rbenv/shims:/home/deploy/.rbenv/bin:/usr/local/sbin:/usr/local/bin:/usr/local/sbin:/usr/bin:/sbin:/bin:/usr/games"

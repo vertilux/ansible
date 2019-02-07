@@ -11,3 +11,21 @@
       permission: public-read
       include: "*"
       #exclude: "*.txt,.*"
+    ignore_errors: yes
+    register: result
+
+  - block:
+    - name: Send notification message via Slack all options
+      slack:
+        token: '{{slack_token}}'
+        color: danger
+        msg: 'Sales analysis files synchronization failed with AWS S3 :-('
+    when: result.failed == true
+
+  - block:
+    - name: Send notification message via Slack all options
+      slack:
+        token: '{{slack_token}}'
+        color: good
+        msg: 'Sales analysis files successfully synchronizing to AWS S3 :-)'
+    when: result.failed == false
