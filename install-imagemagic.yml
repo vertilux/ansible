@@ -1,0 +1,13 @@
+---
+- hosts: web-servers
+  remote_user: deploy
+  become: yes
+  tasks:
+  - name: Installing ImagaeMagic
+    apt:
+      name: imagemagick
+      state: latest
+  - name: Send notification message via Slack all options
+    slack:
+      token: '{{slack_token}}'
+      msg: '{{ inventory_hostname }} completed'

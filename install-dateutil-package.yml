@@ -1,0 +1,9 @@
+---
+- hosts: web-servers
+  remote_user: deploy
+  become: yes
+  tasks:
+  - name: "Ensure requirements packages are installed"
+    apt:
+      name: ['python-dateutil', 'python3-dateutil', 'python-boto','python-boto3', 'python-botocore']
+      state: latest
