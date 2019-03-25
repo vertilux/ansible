@@ -6,7 +6,7 @@
       aws_secret_key: '{{aws_secret_key}}'
       bucket: '{{bucket}}'
       region: 'us-east-1'
-      file_root: "/home/deploy/vertilux-accpac/current/public/json/"
+      file_root: "/home/deploy/{{site}}/current/public/json/"
       key_prefix: "json"
       permission: public-read
       include: "*"
