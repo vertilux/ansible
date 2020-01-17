@@ -2,4 +2,4 @@
 - hosts: all
   tasks:
     - name: Remove cached files
-      command: /bin/bash -l -c  'rm -rf /home/deploy/{{site}}/current/tmp/cache/*'
+      command: /bin/bash -l -c  'rm -rf /home/deploy/{{app}}/current/tmp/cache/*'
