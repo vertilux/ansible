@@ -1,7 +1,7 @@
 - hosts: all
   tasks:
   - stat:
-      path: /home/deploy/vertilux-accpac/current/tmp/maintenance.yml
+      path: /home/deploy/{{app}}/current/tmp/maintenance.yml
     register: result
 
   - block:
