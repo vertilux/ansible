@@ -1,0 +1,17 @@
+---
+# tasks file for app-update
+
+- name: Git Pull from Version Control
+  command: git pull
+  args:
+    chdir: /home/deploy/{{app}}
+
+- name: Bundle
+  command: bash -lc "bundle"
+  args:
+    chdir: /home/deploy/{{app}}
+
+- name: Precompile Assets
+  command: bash -lc "RAILS_ENV={{env}} rake assets:precompile"
+  args:
+    chdir: /home/deploy/{{app}}

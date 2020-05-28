@@ -1,0 +1,5 @@
+---
+# tasks file for restart-nginx
+
+- name: Restart Nginx
+  raw: sudo service nginx restart

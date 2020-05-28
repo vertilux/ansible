@@ -1,0 +1,5 @@
+---
+# tasks file for restart-sidekiq
+
+- name: Restart Sidekiq
+  raw: sudo service sidekiq restart
