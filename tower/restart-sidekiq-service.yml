@@ -4,6 +4,6 @@
   tasks:
     - name: Restart queue processing job Sidekiq
       service:
-        name: sidekiq
+        name: sidekiq-{{env}}
         state: restarted
       #command: /bin/bash -l -c  'systemctl restart sidekiq.service'
