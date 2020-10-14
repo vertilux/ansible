@@ -1,0 +1,5 @@
+---
+- hosts: all
+  tasks:
+    - name: Get all production DB configurations
+      command: /bin/bash -l -c  'cat /home/deploy/{{app}}/shared/config/*.yml'
