@@ -1,0 +1,30 @@
+- hosts: all
+  tasks:
+  - name: Copy wilcard config files
+    copy:
+      src: "{{ item }}"
+      dest: /home/deploy/erp-{{env}}/shared/config
+    with_fileglob:
+      - /home/deploy/erp-accltd/shared/config/*.yml
+
+  - name: Get all yml config files
+    find:  
+      paths: /home/deploy/erp-{{env}}/shared/config
+      patterns: *.yml
+     register: yml_config
+
+  - name: Replace environment name
+    replace:
+      dest: "{{ item.path }}"
+      backup: yes
+      regexp: 'accltd'
+      replace: "{{env}}"
+    with_items: "{{ yml_config.files }}"
+
+  - name: Replace environment name
+    replace:
+      dest: "{{ item.path }}"
+      backup: yes
+      regexp: 'accltd'
+      replace: "{{env | upper}}"
+    with_items: "{{ yml_config.files }}"
