@@ -3,9 +3,9 @@
   - name: Copy wilcard config files
     copy:
       src: "{{ item }}"
-      dest: /home/deploy/erp-{{env}}/shared/config
+      dest: /home/deploy/erp-{{env}}/shared/config/
     with_fileglob:
-      - /home/deploy/erp-accltd/shared/config/*.yml
+      - /home/deploy/erp-accltd/shared/config/*
 
   - name: Get all yml config files
     find:  
