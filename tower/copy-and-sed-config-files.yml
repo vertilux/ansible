@@ -10,7 +10,6 @@
   - name: Get all yml config files
     find:  
       paths: /home/deploy/erp-{{env}}/shared/config
-      patterns: *
      register: yml_config
 
   - name: Replace environment name
