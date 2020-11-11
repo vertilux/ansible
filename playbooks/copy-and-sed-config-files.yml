@@ -1,0 +1,12 @@
+---
+- hosts: web_servers
+  remote_user: deploy
+
+  tasks:
+  - name: Replace postgres DB name
+    replace:
+      path: "/home/deploy/erp-{{env}}/shared/config/database_postgres.yml"
+      regexp: '{{replace}}'
+      replace: "{{with}}"
+    tags:
+       - postgres
