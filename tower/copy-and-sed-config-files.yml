@@ -1,11 +1,14 @@
 - hosts: all
   tasks:
-  - name: Copy wilcard config files
-    copy:
-      src: "{{ item }}"
-      dest: "/home/deploy/erp-{{env}}/shared/config/"
-    with_fileglob:
-      - "/home/deploy/erp-accltd/shared/config/*"
+  - name: Get all original config files
+    find: 
+      paths: "/home/deploy/erp-accltd/shared/config/"
+      recurse: yes
+      patterns: "*yml"
+    register: yml_to_copy
+  - name: Copy to the new application directory
+    copy: src={{ item.path }} dest=/home/deploy/erp-{{env}}/shared/config/
+      with_items: "{{ yml_to_copy.files }}"
 
   - name: Get all yml config files
     find:  
@@ -21,7 +24,7 @@
       replace: "{{env}}"
     with_items: "{{ yml_config.files }}"
 
-  - name: Replace environment name
+  - name: Replace DB name
     replace:
       dest: "{{ item.path }}"
       backup: yes
