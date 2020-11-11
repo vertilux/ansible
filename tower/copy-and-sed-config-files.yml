@@ -23,15 +23,23 @@
   - name: Replace environment name
     replace:
       dest: "{{ item.path }}"
-      backup: yes
+      backup: no
       regexp: 'accltd'
       replace: "{{env}}"
     with_items: "{{ yml_config.files }}"
 
-  - name: Replace DB name
+  - name: Replace Sage300 DB name
     replace:
       dest: "{{ item.path }}"
-      backup: yes
+      backup: no
       regexp: 'ACCLTD'
       replace: "{{env | upper}}"
     with_items: "{{ yml_config.files }}"
+
+  - name: Replace postgres DB name
+    replace:
+      path: /home/deploy/erp-accltd/shared/config/database_postgres.yml
+      regexp: 'vertilux_production'
+      replace: "erp_{{env}}_production"
+    tags:
+       - postgres
