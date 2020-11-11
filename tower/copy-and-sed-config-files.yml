@@ -11,6 +11,7 @@
     copy:
       src: "{{ item.path }}"
       dest: "/home/deploy/erp-{{env}}/shared/config/"
+      remote_src: yes
     with_items: "{{ yml_to_copy.files }}"
 
   - name: Get all yml config files
