@@ -1,0 +1,27 @@
+---
+- hosts: web_servers
+  remote_user: deploy
+  become: yes
+  tasks:
+  - name: Insert/Update nginx configuration file
+    blockinfile:
+      path: /etc/nginx/sites-enabled/default
+      block: |
+        # {{env | upper}}
+        server {
+                listen 80;
+
+                server_name {{url}};
+                passenger_enabled on;
+                passenger_max_request_queue_size 1000;
+                rails_env    {{env}};
+                root         /home/deploy/erp-{{env}}/current/public;
+                # ActionCable
+                location /cable {
+                        passenger_app_group_name erp-{{env}}_websocket;
+                        passenger_force_max_concurrent_requests_per_process 0;
+                }
+        }
+
+  - name: Restart Nginx
+    raw: sudo service nginx restart

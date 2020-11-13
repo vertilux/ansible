@@ -14,5 +14,5 @@
   handlers:
     - name: Start sidekiq
       service:
-        name: sidekiq
-        state: started-{{env}}.service
+        name: sidekiq-{{env}}.service
+        state: started

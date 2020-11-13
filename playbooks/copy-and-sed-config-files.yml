@@ -2,6 +2,14 @@
 - hosts: web_servers
   remote_user: deploy
 
+  vars_prompt:
+    - name: env
+      prompt: "Please enter environment"
+      private: no
+    - name: port
+      prompt: "Please enter SQL server port"
+      private: no
+
   tasks:
   - name: Replace postgres DB name
     replace:
@@ -10,3 +18,19 @@
       replace: "{{with}}"
     tags:
        - postgres
+
+  - name: "Replace sql server default's yml port"
+    replace:
+      path: "/home/deploy/erp-{{env}}/shared/config/database.yml"
+      regexp: '55200'
+      replace: "{{port}}"
+    tags:
+       - sql_server
+
+  - name: "Replace port on sql server config yml file"
+    replace:
+      path: "/home/deploy/erp-{{env}}/shared/config/database_sqlserver.yml"
+      regexp: '55200'
+      replace: "{{port}}"
+    tags:
+       - sql_server
