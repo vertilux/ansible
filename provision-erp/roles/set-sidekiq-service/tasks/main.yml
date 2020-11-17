@@ -1,0 +1,12 @@
+---
+# tasks file for set-sidekiq-service
+- block: 
+  - name: Create service file
+    template:
+      src: sidekiq.service.j2
+      dest: /lib/systemd/system/sidekiq-{{env}}.service
+  - name: Enable service
+    service:
+      name: sidekiq-{{env}}.service
+      state: enabled
+  become: yes

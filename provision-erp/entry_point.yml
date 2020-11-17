@@ -1,0 +1,21 @@
+- hosts: servers
+  vars_prompt:
+    - name: remote_user
+      prompt: "Please enter username"
+      private: no
+    - name: env
+      prompt: "Please enter environment"
+      private: no
+    - name: url
+      prompt: "Please app url for nginx config"
+      private: no
+    - name: port
+      prompt: "Please enter SQL server port"
+      private: no
+  vars_files:
+    - "vars/public.yml"
+  remote_user: "{{remote_use}}"
+  roles:
+    - set-config-files
+    - append-nginx-config
+    - set-sidekiq-service

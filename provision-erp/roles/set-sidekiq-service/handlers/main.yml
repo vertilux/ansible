@@ -1,0 +1,6 @@
+---
+# handlers file for set-sidekiq-service
+- name: Start sidekiq
+  service:
+    name: sidekiq-{{env}}.service
+    state: started

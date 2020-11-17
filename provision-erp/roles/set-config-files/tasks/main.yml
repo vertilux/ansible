@@ -1,0 +1,63 @@
+---
+# tasks file for set-config-files]
+- name: Get all original config files
+  find: 
+    paths: "/home/deploy/erp-accltd/shared/config/"
+    recurse: yes
+    patterns: "*yml"
+  register: yml_to_copy
+
+- name: Copy to the new application directory
+  copy:
+    src: "{{ item.path }}"
+    dest: "/home/deploy/erp-{{env}}/shared/config/"
+    remote_src: yes
+  with_items: "{{ yml_to_copy.files }}"
+
+- name: Get all yml config files
+  find:  
+    paths: "/home/deploy/erp-{{env}}/shared/config/"
+    patterns: "*.yml"
+  register: yml_config
+
+- name: Replace environment name
+  replace:
+    dest: "{{ item.path }}"
+    backup: no
+    regexp: 'accltd'
+    replace: "{{env}}"
+  with_items: "{{ yml_config.files }}"
+
+- name: Replace Sage300 DB name
+  replace:
+    dest: "{{ item.path }}"
+    backup: no
+    regexp: 'ACCLTD'
+    replace: "{{env | upper}}"
+  with_items: "{{ yml_config.files }}"
+  tags:
+     - sql_server
+
+- name: Replace postgres DB name
+  replace:
+    path: "/home/deploy/erp-{{env}}/shared/config/database_postgres.yml"
+    regexp: '{{replace}}'
+    replace: "{{with}}"
+  tags:
+     - postgres
+
+- name: "Replace sql server default's yml port"
+  replace:
+    path: "/home/deploy/erp-{{env}}/shared/config/database.yml"
+    regexp: '55200'
+    replace: "{{port}}"
+  tags:
+     - sql_server
+
+- name: "Replace port on sql server config yml file"
+  replace:
+    path: "/home/deploy/erp-{{env}}/shared/config/database_sqlserver.yml"
+    regexp: '55200'
+    replace: "{{port}}"
+  tags:
+     - sql_server
