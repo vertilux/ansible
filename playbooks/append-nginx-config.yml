@@ -22,6 +22,7 @@
                         passenger_force_max_concurrent_requests_per_process 0;
                 }
         }
+      marker: "# {mark} ANSIBLE MANAGED BLOCK {{ env }}"
 
   - name: Restart Nginx
     raw: sudo service nginx restart
