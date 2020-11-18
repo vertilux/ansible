@@ -1,38 +1,53 @@
-Role Name
+Create Enable and Start Sidekiq Service
 =========
 
-A brief description of the role goes here.
+We use Sidekiq as background job processing for our applications.   
+Sidekiq uses threads to handle many jobs at the same time in the same process. It is integrated tightly with Rails to make background processing dead simple.   
+This template role set the sidekiq service, enabled and start the service.
 
-Requirements
-------------
+```
+[Unit]
+Description=sidekiq-{{env}}	
+After=syslog.target network.target
 
-Any pre-requisites that may not be covered by Ansible itself or the role should be mentioned here. For instance, if the role uses the EC2 module, it may be a good idea to mention in this section that the boto package is required.
+[Service]
+Type=simple
+WorkingDirectory=/home/deploy/erp-{{env}}/current
+ExecStart=/home/deploy/.rbenv/shims/bundle exec sidekiq -e {{env}}
+User=deploy
+Group=deploy
+UMask=0002
+
+# Greatly reduce Ruby memory fragmentation and heap usage
+# https://www.mikeperham.com/2018/04/25/taming-rails-memory-bloat/
+Environment=MALLOC_ARENA_MAX=2
+
+# if we crash, restart
+RestartSec=1
+Restart=on-failure
+
+# output goes to /var/log/syslog
+StandardOutput=syslog
+StandardError=syslog
+
+# This will default to "bundler" if we don't specify it
+SyslogIdentifier=sidekiq-{{env}}
+
+[Install]
+WantedBy=multi-user.target
+```
 
 Role Variables
 --------------
 
-A description of the settable variables for this role should go here, including any variables that are in defaults/main.yml, vars/main.yml, and any variables that can/should be set via parameters to the role. Any variables that are read from other roles and/or the global scope (ie. hostvars, group vars, etc.) should be mentioned here as well.
-
-Dependencies
-------------
-
-A list of other roles hosted on Galaxy should go here, plus any details in regards to parameters that may need to be set for other roles, or variables that are used from other roles.
+In order to properly run this role make sure the variables env and user where set at prompt when the entry point playbook was executed.
 
 Example Playbook
 ----------------
 
-Including an example of how to use your role (for instance, with variables passed in as parameters) is always nice for users too:
-
-    - hosts: servers
-      roles:
-         - { role: username.rolename, x: 42 }
-
-License
--------
-
-BSD
+This role is not public on the Ansible's Galaxy community, it works only for Vertilux scenario.
 
 Author Information
 ------------------
 
-An optional section for the role authors to include contact information, or a website (HTML is not allowed).
+Jose Perez (a.k.a LePepe)
