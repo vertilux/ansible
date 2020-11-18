@@ -5,8 +5,12 @@
     template:
       src: sidekiq.service.j2
       dest: /lib/systemd/system/sidekiq-{{env}}.service
-  - name: Enable service
+  - name: Started service
     service:
       name: sidekiq-{{env}}.service
-      state: enabled
+      state: started
+  - name: Enabled service
+    service:
+      name: sidekiq-{{env}}.service
+      enabled: yes
   become: yes

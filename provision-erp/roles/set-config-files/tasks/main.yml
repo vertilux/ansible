@@ -41,8 +41,8 @@
 - name: Replace postgres DB name
   replace:
     path: "/home/deploy/erp-{{env}}/shared/config/database_postgres.yml"
-    regexp: '{{replace}}'
-    replace: "{{with}}"
+    regexp: 'vertilux_production'
+    replace: "erp_{{env}}_production"
   tags:
      - postgres
 

@@ -1,6 +1,6 @@
 - hosts: servers
   vars_prompt:
-    - name: remote_user
+    - name: user
       prompt: "Please enter username"
       private: no
     - name: env
@@ -14,7 +14,7 @@
       private: no
   vars_files:
     - "vars/public.yml"
-  remote_user: "{{remote_use}}"
+  remote_user: "{{user}}"
   roles:
     - set-config-files
     - append-nginx-config
