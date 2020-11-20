@@ -21,3 +21,7 @@ Entry point is the "main" playbook, this is going to ask for:
 - append-nginx-config
 - set-sidekiq-service
 - logrotate
+
+### TODO
+
+[ ] Set postgresql_db module role to add databases from a remote host.
