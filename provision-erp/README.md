@@ -20,3 +20,4 @@ Entry point is the "main" playbook, this is going to ask for:
 - set-config-files
 - append-nginx-config
 - set-sidekiq-service
+- logrotate

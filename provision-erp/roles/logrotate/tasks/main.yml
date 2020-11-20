@@ -1,0 +1,21 @@
+---
+# tasks file for logrotate
+- block:
+  - name: Insert/Update logrotate configuration file
+    blockinfile:
+      path: /etc/logrotate.conf
+      block: |
+        /home/deploy/{{env}}/current/log/*.log {
+          daily
+          missingok
+          rotate 7
+          compress
+          delaycompress
+          notifempty
+          copytruncate
+        }
+      marker: "# {mark} ANSIBLE MANAGED BLOCK {{ env | upper }}"
+
+  - name: Running Logrotate
+    raw: sudo /usr/sbin/logrotate -f /etc/logrotate.conf
+  become: yes
