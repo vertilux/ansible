@@ -1,0 +1,8 @@
+[web_servers]
+lb01 ansible_host=165.227.210.87 ansible_user=deploy
+lb02 ansible_host=159.203.94.161 ansible_user=deploy
+lb03 ansible_host=134.209.34.218 ansible_user=deploy
+lb04 ansible_host=134.209.34.40 ansible_user=deploy
+
+[db]
+postgres ansible_host=104.236.33.109 ansible_user=deploy

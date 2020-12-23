@@ -1,0 +1,23 @@
+---
+- hosts: web_servers
+  remote_user: deploy
+  become: yes
+  tasks:
+  - name: Insert/Update logrotate configuration file
+    blockinfile:
+      path: /etc/logrotate.conf
+      block: |
+        # {{env | upper}}
+        /home/deploy/erp-{{env}}/current/log/*.log {
+          daily
+          missingok
+          rotate 7
+          compress
+          delaycompress
+          notifempty
+          copytruncate
+        }
+      marker: "# {mark} ANSIBLE MANAGED BLOCK {{ env }}"
+
+  - name: Running Logrotate
+    raw: sudo /usr/sbin/logrotate -f /etc/logrotate.conf
