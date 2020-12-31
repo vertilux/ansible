@@ -2,7 +2,7 @@
 
 This is a collection of playbooks.
 
-### logrotate
+### Logrotate
 Configuring Logrotate For Rails Production Logs.
 Running `ansible-playbook append-logrotate.yml --extra-vars "env=ENV" -K -i inventory.yml` will edit `sudo vim /etc/logrotate.conf`, and at the bottom of the file the following block of code (change the ENV, ex: accltd):   
 
