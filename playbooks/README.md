@@ -2,6 +2,10 @@
 
 This is a collection of playbooks.
 
+### Daily LME/SMM
+This playbook execuite a ruby script to scrap the LME (London Market Exchange) and SMM (Shanghai Metals Market) to get the trading price of aluminum and save it into MSSQL.   
+`ansible-playbook daily_lme.yml -i inventory.yml --limit lb01`
+
 ### Logrotate
 Configuring Logrotate For Rails Production Logs.
 Running `ansible-playbook append-logrotate.yml --extra-vars "env=ENV" -K -i inventory.yml` will edit `sudo vim /etc/logrotate.conf`, and at the bottom of the file the following block of code (change the ENV, ex: accltd):   
