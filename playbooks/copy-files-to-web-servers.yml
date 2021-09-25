@@ -1,0 +1,35 @@
+---
+- hosts: web_servers
+  remote_user: deploy
+
+  vars_prompt:
+    - name: env
+      prompt: "Please enter environment"
+      private: no
+
+  tasks:
+    - name: Ansible check directory.
+      stat:
+        path: /home/deploy/erp-{{env}}/shared/config/credentials
+      register: credentials
+
+    - name: "echo if directory already existed"
+      debug:
+        msg: "credentials directory is already existed"
+      when: credentials.stat.exists
+
+    - name: "Ansible create directory if not exists"
+      file:
+        path: /home/deploy/erp-{{env}}/shared/config/credentials
+        state: directory
+        mode: 0755
+        group: deploy
+        owner: deploy
+      when: credentials.stat.exists == false
+
+    - name: Copying the Directory and its contents
+      copy:
+        src: ~/Documents/apps/vertilux-accpac/config/credentials/{{env}}.key
+        dest: /home/deploy/erp-{{env}}/shared/config/credentials
+        owner: deploy
+        group: deploy

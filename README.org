@@ -1,0 +1,22 @@
+#+TITLE: Sagekit
+#+AUTHOR: Jose Perez
+#+EMAIL: jose.perez@vertilux.com
+
+* Playbook collections
+This repository is a collection of ansible playbooks implemented by Vertilux's IT dept to perform some server automations.
+
+** Directories
+*** Deploy
+This playbook contains multiples roles to deploy new versions to production.
+
+*** Playbooks
+A collections o simple playbooks to perfomr different tasks.
+
+*** Provision ERP
+Roles to provision a new distribution center (environment) to production.
+
+*** Tower
+A collections of playbooks to perfomr tasks with the tower web interface.
+
+*** TODO
+    - [ ] Document all task and roles
