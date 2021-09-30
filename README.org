@@ -1,18 +1,142 @@
 #+TITLE: Ansible
-#+AUTHOR: Jose Perez
+#+AUTHOR: VTX IT Department
 #+EMAIL: jose.perez@vertilux.com
+#+EXPORT_FILE_NAME: ./docs/index.html
+#+SETUPFILE: https://fniessen.github.io/org-html-themes/org/theme-readtheorg.setup
+#+HTML_HEAD: <link rel="stylesheet" type="text/css" href="style.css">
+#+OPTIONS: num:nil
 
 This repository is a collection of ansible playbooks implemented by Vertilux's IT dept to perform some server automations.
 
-** Directories
-*** Deploy
+** Deploy
 This playbook contains multiples roles to deploy new versions to production.
 
-*** Playbooks
-A collections o simple playbooks to perfomr different tasks.
+** Playbooks
+A collections o simple playbooks to perform different tasks.
 
-*** Provision ERP
+*** Ping
+Try to connect to host, verify a usable python and return ~pong~ on success.
+
+#+begin_src bash
+ansible-playbook ping.yml -i inventory
+#+end_src
+
+*** Sidekiq
+Background processing for ruby. Sidekiq uses threads to handle jobs at the same time in the same process. It is integrated tightly with Rails to make background processing dead simple.
+
+**** Provision Service
+Running sidekiq as a system service with systemd, this will ensure the process is restarted if Sidekiq crashes.
+Here is an example systemd file:
+
+#+begin_src
+[Unit]
+Description=sidekiq
+After=syslog.target network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/deploy/APP_LOCATION/current
+ExecStart=/home/deploy/.rbenv/shims/bundle exec sidekiq -e ENVIRONMENT
+User=deploy
+Group=deploy
+UMask=0002
+
+# Greatly reduce Ruby memory fragmentation and heap usage
+# https://www.mikeperham.com/2018/04/25/taming-rails-memory-bloat/
+Environment=MALLOC_ARENA_MAX=2
+
+# if we crash, restart
+RestartSec=1
+Restart=on-failure
+
+# output goes to /var/log/syslog
+StandardOutput=syslog
+StandardError=syslog
+
+# This will default to "bundler" if we don't specify it
+SyslogIdentifier=sidekiq
+
+[Install]
+WantedBy=multi-user.target
+#+end_src
+
+With the following playbook the service is provision on all servers.
+
+#+begin_src bash
+ansible-playbook sidekiq_service.yml -K -i inventory.yml
+#+end_src
+
+**** Restart Sidekiq
+
+#+begin_src bash
+ansible-playbook restart-sidekiq.yml -K -i inventory.yml
+#+end_src
+
+*** Nginx Webserver
+Nginx is a web server that can be used as a reverse proxy, load balancer and HTTP cache.
+
+**** Append Nginx Configuration
+This playbook will append a configuration block to the default configuration with the env passed. This is the easy way to when deploying a new distribution center.
+
+#+begin_src bash
+ansible-playbook append-nginx-config.yml -K -i inventory.yml
+#+end_src
+
+**** Restart Nginx
+Simply restart nginx on all servers excluding load labancer.
+
+#+begin_src bash
+ansible-playbook restart-nginx.yml -K -i inventory.yml
+#+end_src
+
+*** Logrotate
+Configuring Logrotate For Rails Production Logs.
+Running ~ansible-playbook append-logrotate.yml --extra-vars "env=ENV" -K -i inventory.yml~ will edit ~sudo vim /etc/logrotate.conf~, and at the bottom of the file the following block of code (change the ENV, ex: accltd):
+
+#+begin_src
+/home/deploy/erp-ENV/current/log/*.log {
+  daily
+  missingok
+  rotate 7
+  compress
+  delaycompress
+  notifempty
+  copytruncate
+}
+#+end_src
+
+#+begin_src bash
+ansible-playbook append-logrotate.yml -K -i inventory.yml
+#+end_src
+
+*How it works:*
+- daily – Rotate the log files each day.
+- missingok – If the log file doesn’t exist, ignore it.
+- rotate 7 – Only keep 7 days of logs.
+- compress – GZip the log file on rotation.
+- delaycompress – Rotate the file one day, then compress it the next day so we can be sure that it won’t interfere with the Rails server.
+- notifempty – Don’t rotate the file if the logs are empty.
+- copytruncate – Copy the log file and then empties it.
+
+*Running Logrotate:*
+Then the playbook will run: `sudo /usr/sbin/logrotate -f /etc/logrotate.conf`
+
+*** Maintenance
+Sometimes there is a need to set the ERP Web application into maintenance mode; when an item change needs to be run or when the we need to upgrade Sage. For this scenarios the folloging playbook is the easier way to set all instances in maintenance mode.
+
+Set only one distribution center to maintenance mode.
+#+begin_src bash
+ansible-playbook maintenance-mode.yml -K -i inventory.yml
+#+end_src
+
+Put everything into maintenance.
+#+begin_src bash
+ansible-playbook maintenance-mode-all.yml -K -i inventory.yml
+#+end_src
+
+
+** Provision ERP
 Roles to provision a new distribution center (environment) to production.
 
-*** Tower
+** Tower
 A collections of playbooks to perform tasks with the tower web interface.
