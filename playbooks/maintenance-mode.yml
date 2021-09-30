@@ -1,0 +1,31 @@
+---
+- hosts: web-servers
+  remote_user: deploy
+
+  vars_prompt:
+    - name: env
+      prompt: "Enter environment"
+      private: no
+
+  tasks:
+  - stat:
+      path: /home/deploy/vertilux-{{env}}/current/tmp/maintenance.yml
+    register: result
+
+  - block:
+    - debug:
+        msg: "ERP maintenance mode is OFF"
+    - name: Setting web servers to maintenance mode to ON
+      command: /bin/bash -l -c 'cd /home/deploy/erp-{{env}}/current && bundle exec rake RAILS_ENV={{env}} maintenance:start'
+      environment:
+        PATH: "/home/deploy/.rbenv/plugins/ruby-build/bin:/home/deploy/.rbenv/bin:/home/deploy/.rbenv/plugins/ruby-build/bin:/home/deploy/.rbenv/shims:/home/deploy/.rbenv/bin:/usr/local/sbin:/usr/local/bin:/usr/local/sbin:/usr/bin:/sbin:/bin:/usr/games"
+    when: result.stat.exists == false
+
+  - block:
+    - debug:
+        msg: "ERP maintenance mode is ON"
+    - name: Setting web servers to maintenance mode to OFF
+      command: /bin/bash -l -c 'cd /home/deploy/erp-{{env}}/current && bundle exec rake RAILS_ENV={{env}} maintenance:end'
+      environment:
+        PATH: "/home/deploy/.rbenv/plugins/ruby-build/bin:/home/deploy/.rbenv/bin:/home/deploy/.rbenv/plugins/ruby-build/bin:/home/deploy/.rbenv/shims:/home/deploy/.rbenv/bin:/usr/local/sbin:/usr/local/bin:/usr/local/sbin:/usr/bin:/sbin:/bin:/usr/games"
+    when: result.stat.exists == true

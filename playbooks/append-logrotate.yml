@@ -2,6 +2,12 @@
 - hosts: web_servers
   remote_user: deploy
   become: yes
+
+  vars_prompt:
+    - name: env
+      prompt: "Enter environment"
+      private: no
+
   tasks:
   - name: Insert/Update logrotate configuration file
     blockinfile:

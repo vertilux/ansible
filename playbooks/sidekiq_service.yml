@@ -2,15 +2,21 @@
 - hosts: web_servers
   remote_user: deploy
   become: yes
+
+  vars_prompt:
+    - name: env
+      prompt: "Enter environment"
+      private: no
+
   tasks:
-  - name: Create service file
-    template:
-      src: sidekiq.service.j2
-      dest: /lib/systemd/system/sidekiq-{{env}}.service
-  - name: Enable service
-    service:
-      name: sidekiq-{{env}}.service
-      state: enabled
+    - name: Create service file
+      template:
+        src: sidekiq.service.j2
+        dest: /lib/systemd/system/sidekiq-{{env}}.service
+    - name: Enable service
+      service:
+        name: sidekiq-{{env}}.service
+        state: enabled
   handlers:
     - name: Start sidekiq
       service:

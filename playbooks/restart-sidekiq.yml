@@ -1,0 +1,14 @@
+---
+- hosts: web_servers
+  become: yes
+
+  vars_prompt:
+    - name: env
+      prompt: "Enter environment"
+      private: no
+
+  tasks:
+    - name: Restart queue processing job Sidekiq
+      service:
+        name: sidekiq-{{env}}
+        state: restarted
