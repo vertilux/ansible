@@ -8,6 +8,39 @@
 
 This repository is a collection of ansible playbooks implemented by Vertilux's IT dept to perform some server automations.
 
+** Getting Started
+Make sure ansible is installed on your machin, to install ansible:
+
+*** Install ansible on Mac
+  ~brew install ansible~
+
+*** Install ansible on Windows
+Probably the best option is to installed Ubuntu on WSL (Windows Subsytem for Linux).
+  + Search for Windows features in the search box. And when the “Turn Windows features on or off ” appears, click on that.
+  + A window will open with a bunch of features. Scroll down and check the box of Windows Subsystem for the Linux option. And after that, click on the OK button.
+   [[file:windows-features.png]]
+  + Open the Microsoft Store and search for Ubuntu to install the latest version.
+   [[file:microsoft-store.png]]
+  + After the installation, you will see a launch button, use that to open the Ubuntu bash.
+  + On Ubuntu bash, it will ask you to set the username and password for the default user. You can also set the root account password from here by typing ~sudo passwd root~
+
+Now install ansible and press Y when ask for.
+#+begin_src bash
+sudo apt-get update
+sudo apt-get install software-properties-common
+sudo apt-add-repository ppa:ansible/ansible
+sudo apt-get update
+sudo apt-get install ansible
+#+end_src
+
+*** Clone the repository.
+
+#+begin_src bash
+git clone git@github.com:vertilux/ansible.git
+#+end_src
+
+Then cd into the ansible directory: $ ~cd  ansible~
+
 ** Deploy
 This playbook contains multiples roles to deploy new versions to production.
 

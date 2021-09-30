@@ -3,7 +3,7 @@
 "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
 <head>
-<!-- 2021-09-30 Thu 16:04 -->
+<!-- 2021-09-30 Thu 16:57 -->
 <meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Ansible</title>
@@ -208,28 +208,35 @@
 <h2>Table of Contents</h2>
 <div id="text-table-of-contents" role="doc-toc">
 <ul>
-<li><a href="#org6188abb">Deploy</a></li>
-<li><a href="#orga115ffc">Playbooks</a>
+<li><a href="#org09d5667">Getting Started</a>
 <ul>
-<li><a href="#org3d91970">Ping</a></li>
-<li><a href="#org17a33e9">Sidekiq</a>
-<ul>
-<li><a href="#orgd0169f8">Provision Service</a></li>
-<li><a href="#orgc1903c1">Restart Sidekiq</a></li>
+<li><a href="#org51ab1ef">Install ansible on Mac</a></li>
+<li><a href="#org9bd614d">Install ansible on Windows</a></li>
+<li><a href="#org7027086">Clone the repository.</a></li>
 </ul>
 </li>
-<li><a href="#orgc5db550">Nginx Webserver</a>
+<li><a href="#orge434db4">Deploy</a></li>
+<li><a href="#orgc714293">Playbooks</a>
 <ul>
-<li><a href="#org86890f6">Append Nginx Configuration</a></li>
-<li><a href="#orgd7b16cc">Restart Nginx</a></li>
+<li><a href="#org729fad9">Ping</a></li>
+<li><a href="#orgfaddfe5">Sidekiq</a>
+<ul>
+<li><a href="#org2943ac8">Provision Service</a></li>
+<li><a href="#orgd3038d0">Restart Sidekiq</a></li>
 </ul>
 </li>
-<li><a href="#org2c7897d">Logrotate</a></li>
-<li><a href="#org74a6eba">Maintenance</a></li>
+<li><a href="#org555248d">Nginx Webserver</a>
+<ul>
+<li><a href="#org2021730">Append Nginx Configuration</a></li>
+<li><a href="#org43a10ff">Restart Nginx</a></li>
 </ul>
 </li>
-<li><a href="#org1abfd82">Provision ERP</a></li>
-<li><a href="#org9fc80d2">Tower</a></li>
+<li><a href="#orgfcdcae9">Logrotate</a></li>
+<li><a href="#orgc981df5">Maintenance</a></li>
+</ul>
+</li>
+<li><a href="#orgb4cb14c">Provision ERP</a></li>
+<li><a href="#orga80f9ce">Tower</a></li>
 </ul>
 </div>
 </div>
@@ -237,26 +244,88 @@
 This repository is a collection of ansible playbooks implemented by Vertilux&rsquo;s IT dept to perform some server automations.
 </p>
 
-<div id="outline-container-org6188abb" class="outline-2">
-<h2 id="org6188abb">Deploy</h2>
-<div class="outline-text-2" id="text-org6188abb">
+<div id="outline-container-org09d5667" class="outline-2">
+<h2 id="org09d5667">Getting Started</h2>
+<div class="outline-text-2" id="text-org09d5667">
+<p>
+Make sure ansible is installed on your machin, to install ansible:
+</p>
+</div>
+
+<div id="outline-container-org51ab1ef" class="outline-3">
+<h3 id="org51ab1ef">Install ansible on Mac</h3>
+<div class="outline-text-3" id="text-org51ab1ef">
+<p>
+<code>brew install ansible</code>
+</p>
+</div>
+</div>
+
+<div id="outline-container-org9bd614d" class="outline-3">
+<h3 id="org9bd614d">Install ansible on Windows</h3>
+<div class="outline-text-3" id="text-org9bd614d">
+<p>
+Probably the best option is to installed Ubuntu on WSL (Windows Subsytem for Linux).
+</p>
+<ul class="org-ul">
+<li>Search for Windows features in the search box. And when the “Turn Windows features on or off ” appears, click on that.</li>
+<li>A window will open with a bunch of features. Scroll down and check the box of Windows Subsystem for the Linux option. And after that, click on the OK button.
+<img src="windows-features.png" alt="windows-features.png" /></li>
+<li>Open the Microsoft Store and search for Ubuntu to install the latest version.
+<img src="microsoft-store.png" alt="microsoft-store.png" /></li>
+<li>After the installation, you will see a launch button, use that to open the Ubuntu bash.</li>
+<li>On Ubuntu bash, it will ask you to set the username and password for the default user. You can also set the root account password from here by typing <code>sudo passwd root</code></li>
+</ul>
+
+<p>
+Now install ansible and press Y when ask for.
+</p>
+<div class="org-src-container">
+<pre class="src src-bash"><span style="color: #bd93f9;">sudo</span> apt-get update
+<span style="color: #bd93f9;">sudo</span> apt-get install software-properties-common
+<span style="color: #bd93f9;">sudo</span> apt-add-repository ppa:ansible/ansible
+<span style="color: #bd93f9;">sudo</span> apt-get update
+<span style="color: #bd93f9;">sudo</span> apt-get install ansible
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org7027086" class="outline-3">
+<h3 id="org7027086">Clone the repository.</h3>
+<div class="outline-text-3" id="text-org7027086">
+<div class="org-src-container">
+<pre class="src src-bash"><span style="color: #bd93f9;">git</span> clone <span style="color: #bd93f9;">git</span>@github.com:vertilux/ansible.git
+</pre>
+</div>
+
+<p>
+Then cd into the ansible directory: $ <code>cd  ansible</code>
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orge434db4" class="outline-2">
+<h2 id="orge434db4">Deploy</h2>
+<div class="outline-text-2" id="text-orge434db4">
 <p>
 This playbook contains multiples roles to deploy new versions to production.
 </p>
 </div>
 </div>
 
-<div id="outline-container-orga115ffc" class="outline-2">
-<h2 id="orga115ffc">Playbooks</h2>
-<div class="outline-text-2" id="text-orga115ffc">
+<div id="outline-container-orgc714293" class="outline-2">
+<h2 id="orgc714293">Playbooks</h2>
+<div class="outline-text-2" id="text-orgc714293">
 <p>
 A collections o simple playbooks to perform different tasks.
 </p>
 </div>
 
-<div id="outline-container-org3d91970" class="outline-3">
-<h3 id="org3d91970">Ping</h3>
-<div class="outline-text-3" id="text-org3d91970">
+<div id="outline-container-org729fad9" class="outline-3">
+<h3 id="org729fad9">Ping</h3>
+<div class="outline-text-3" id="text-org729fad9">
 <p>
 Try to connect to host, verify a usable python and return <code>pong</code> on success.
 </p>
@@ -268,17 +337,17 @@ Try to connect to host, verify a usable python and return <code>pong</code> on s
 </div>
 </div>
 
-<div id="outline-container-org17a33e9" class="outline-3">
-<h3 id="org17a33e9">Sidekiq</h3>
-<div class="outline-text-3" id="text-org17a33e9">
+<div id="outline-container-orgfaddfe5" class="outline-3">
+<h3 id="orgfaddfe5">Sidekiq</h3>
+<div class="outline-text-3" id="text-orgfaddfe5">
 <p>
 Background processing for ruby. Sidekiq uses threads to handle jobs at the same time in the same process. It is integrated tightly with Rails to make background processing dead simple.
 </p>
 </div>
 
-<div id="outline-container-orgd0169f8" class="outline-4">
-<h4 id="orgd0169f8">Provision Service</h4>
-<div class="outline-text-4" id="text-orgd0169f8">
+<div id="outline-container-org2943ac8" class="outline-4">
+<h4 id="org2943ac8">Provision Service</h4>
+<div class="outline-text-4" id="text-org2943ac8">
 <p>
 Running sidekiq as a system service with systemd, this will ensure the process is restarted if Sidekiq crashes.
 Here is an example systemd file:
@@ -327,9 +396,9 @@ With the following playbook the service is provision on all servers.
 </div>
 </div>
 
-<div id="outline-container-orgc1903c1" class="outline-4">
-<h4 id="orgc1903c1">Restart Sidekiq</h4>
-<div class="outline-text-4" id="text-orgc1903c1">
+<div id="outline-container-orgd3038d0" class="outline-4">
+<h4 id="orgd3038d0">Restart Sidekiq</h4>
+<div class="outline-text-4" id="text-orgd3038d0">
 <div class="org-src-container">
 <pre class="src src-bash">ansible-playbook restart-sidekiq.yml -K -i inventory.yml
 </pre>
@@ -338,17 +407,17 @@ With the following playbook the service is provision on all servers.
 </div>
 </div>
 
-<div id="outline-container-orgc5db550" class="outline-3">
-<h3 id="orgc5db550">Nginx Webserver</h3>
-<div class="outline-text-3" id="text-orgc5db550">
+<div id="outline-container-org555248d" class="outline-3">
+<h3 id="org555248d">Nginx Webserver</h3>
+<div class="outline-text-3" id="text-org555248d">
 <p>
 Nginx is a web server that can be used as a reverse proxy, load balancer and HTTP cache.
 </p>
 </div>
 
-<div id="outline-container-org86890f6" class="outline-4">
-<h4 id="org86890f6">Append Nginx Configuration</h4>
-<div class="outline-text-4" id="text-org86890f6">
+<div id="outline-container-org2021730" class="outline-4">
+<h4 id="org2021730">Append Nginx Configuration</h4>
+<div class="outline-text-4" id="text-org2021730">
 <p>
 This playbook will append a configuration block to the default configuration with the env passed. This is the easy way to when deploying a new distribution center.
 </p>
@@ -360,9 +429,9 @@ This playbook will append a configuration block to the default configuration wit
 </div>
 </div>
 
-<div id="outline-container-orgd7b16cc" class="outline-4">
-<h4 id="orgd7b16cc">Restart Nginx</h4>
-<div class="outline-text-4" id="text-orgd7b16cc">
+<div id="outline-container-org43a10ff" class="outline-4">
+<h4 id="org43a10ff">Restart Nginx</h4>
+<div class="outline-text-4" id="text-org43a10ff">
 <p>
 Simply restart nginx on all servers excluding load labancer.
 </p>
@@ -375,9 +444,9 @@ Simply restart nginx on all servers excluding load labancer.
 </div>
 </div>
 
-<div id="outline-container-org2c7897d" class="outline-3">
-<h3 id="org2c7897d">Logrotate</h3>
-<div class="outline-text-3" id="text-org2c7897d">
+<div id="outline-container-orgfcdcae9" class="outline-3">
+<h3 id="orgfcdcae9">Logrotate</h3>
+<div class="outline-text-3" id="text-orgfcdcae9">
 <p>
 Configuring Logrotate For Rails Production Logs.
 Running <code>ansible-playbook append-logrotate.yml --extra-vars "env=ENV" -K -i inventory.yml</code> will edit <code>sudo vim /etc/logrotate.conf</code>, and at the bottom of the file the following block of code (change the ENV, ex: accltd):
@@ -420,9 +489,9 @@ Then the playbook will run: `sudo /usr/sbin/logrotate -f /etc/logrotate.conf`
 </div>
 </div>
 
-<div id="outline-container-org74a6eba" class="outline-3">
-<h3 id="org74a6eba">Maintenance</h3>
-<div class="outline-text-3" id="text-org74a6eba">
+<div id="outline-container-orgc981df5" class="outline-3">
+<h3 id="orgc981df5">Maintenance</h3>
+<div class="outline-text-3" id="text-orgc981df5">
 <p>
 Sometimes there is a need to set the ERP Web application into maintenance mode; when an item change needs to be run or when the we need to upgrade Sage. For this scenarios the folloging playbook is the easier way to set all instances in maintenance mode.
 </p>
@@ -447,18 +516,18 @@ Put everything into maintenance.
 </div>
 
 
-<div id="outline-container-org1abfd82" class="outline-2">
-<h2 id="org1abfd82">Provision ERP</h2>
-<div class="outline-text-2" id="text-org1abfd82">
+<div id="outline-container-orgb4cb14c" class="outline-2">
+<h2 id="orgb4cb14c">Provision ERP</h2>
+<div class="outline-text-2" id="text-orgb4cb14c">
 <p>
 Roles to provision a new distribution center (environment) to production.
 </p>
 </div>
 </div>
 
-<div id="outline-container-org9fc80d2" class="outline-2">
-<h2 id="org9fc80d2">Tower</h2>
-<div class="outline-text-2" id="text-org9fc80d2">
+<div id="outline-container-orga80f9ce" class="outline-2">
+<h2 id="orga80f9ce">Tower</h2>
+<div class="outline-text-2" id="text-orga80f9ce">
 <p>
 A collections of playbooks to perform tasks with the tower web interface.
 </p>
@@ -467,7 +536,7 @@ A collections of playbooks to perform tasks with the tower web interface.
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: VTX IT Department</p>
-<p class="date">Created: 2021-09-30 Thu 16:04</p>
+<p class="date">Created: 2021-09-30 Thu 16:57</p>
 </div>
 </body>
 </html>
