@@ -3,5 +3,7 @@
 
 - name: Run Migrations
   command: bash -lc "RAILS_ENV={{env}} rake db:migrate"
+  environment:
+    PATH: "/home/deploy/.rbenv/plugins/ruby-build/bin:/home/deploy/.rbenv/bin:/home/deploy/.rbenv/plugins/ruby-build/bin:/home/deploy/.rbenv/shims:/home/deploy/.rbenv/bin:/usr/local/sbin:/usr/local/bin:/usr/local/sbin:/usr/bin:/sbin:/bin:/usr/games"
   args:
-    chdir: /home/deploy/{{app}}
+    chdir: /home/deploy/erp-{{env}}

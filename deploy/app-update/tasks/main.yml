@@ -1,17 +1,47 @@
 ---
 # tasks file for app-update
 
+- name: Ansible check directory.
+  stat:
+    path: /home/deploy/erp-{{env}}
+  register: app
+
 - name: Git Pull from Version Control
-  command: git pull
+  command: git pull origin bump-rails
   args:
-    chdir: /home/deploy/{{app}}
+    chdir: /home/deploy/erp-{{env}}
+  when: app.stat.exists
+
+- name: Create app directory
+  file:
+    path: /home/deploy/erp-{{env}}
+    state: directory
+    mode: 0755
+    group: deploy
+    owner: deploy
+  when: app.stat.exists == false
+
+- name: Git clone form Version Control
+  command: git clone -b bump-rails git@github.com:lepepe/vertilux-accpac.git /home/deploy/erp-{{env}}
+  args:
+    chdir: /home/deploy/erp-{{env}}
+  when: app.stat.exists == false
+
+- name: Yarn
+  command: yarn install
+  args:
+    chdir: /home/deploy/erp-{{env}}
 
 - name: Bundle
   command: bash -lc "bundle"
+  environment:
+    PATH: "/home/deploy/.rbenv/plugins/ruby-build/bin:/home/deploy/.rbenv/bin:/home/deploy/.rbenv/plugins/ruby-build/bin:/home/deploy/.rbenv/shims:/home/deploy/.rbenv/bin:/usr/local/sbin:/usr/local/bin:/usr/local/sbin:/usr/bin:/sbin:/bin:/usr/games"
   args:
-    chdir: /home/deploy/{{app}}
+    chdir: /home/deploy/erp-{{env}}
 
 - name: Precompile Assets
   command: bash -lc "RAILS_ENV={{env}} rake assets:precompile"
+  environment:
+    PATH: "/home/deploy/.rbenv/plugins/ruby-build/bin:/home/deploy/.rbenv/bin:/home/deploy/.rbenv/plugins/ruby-build/bin:/home/deploy/.rbenv/shims:/home/deploy/.rbenv/bin:/usr/local/sbin:/usr/local/bin:/usr/local/sbin:/usr/bin:/sbin:/bin:/usr/games"
   args:
-    chdir: /home/deploy/{{app}}
+    chdir: /home/deploy/erp-{{env}}

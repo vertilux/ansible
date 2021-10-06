@@ -42,7 +42,43 @@ git clone git@github.com:vertilux/ansible.git
 Then cd into the ansible directory: $ ~cd  ansible~
 
 ** Deploy
-This playbook contains multiples roles to deploy new versions to production.
+This playbook contains multiples roles to deploy new versions or updates to production.
+
+[[file:infrastructure-diagram.png]]
+
+To avoid password authetication generate a public key and copy to the remote servers.\\
+To create the SSH keys, type ~ssh-keygen -t rsa -C "your_email@example.com"~. This will create both =id_rsa= and =id_rsa.pub= files.
+Copy the generated public key to the remote host
+#+begin_src bash
+cat ~/.ssh/id_rsa.pub | ssh user@remote_host 'cat >> .ssh/authorized_keys'
+#+end_src
+
+Additioanlly disable password requirement for =sudo=.
+Create a file in =/etc/sudoers.d/deploy=
+#+begin_src
+deploy ALL=(ALL) NOPASSWD:ALL
+#+end_src
+
+*** Entry point
+This playbook execute the different roles that will run
+
+#+begin_src bash
+ansible-playbook entry_point.yml -i inventory
+#+end_src
+
+*** Roles
+
+| description     | commands                                                                                   |
+|-----------------+--------------------------------------------------------------------------------------------|
+| app-update      | Will check if directory exist then is going to clone or pull from version control (Github) |
+|                 | =yarn install=                                                                               |
+|                 | =bundle=                                                                                     |
+|                 | =RAILS_ENV={{env}} rake assets:precompile=                                                   |
+| run-migrations  | =RAILS_ENV={{env}} rake db:migrat=                                                           |
+| restart-sidekiq | =sudo service sidekiq-{{env}} restart=                                                       |
+| restart-nginx   | =sudo service sidekiq-{{env}} restart=                                                       |
+|                 |                                                                                            |
+#+TBLFM:
 
 ** Playbooks
 A collections o simple playbooks to perform different tasks.
@@ -167,9 +203,25 @@ Put everything into maintenance.
 ansible-playbook maintenance-mode-all.yml -K -i inventory.yml
 #+end_src
 
-
 ** Provision ERP
-Roles to provision a new distribution center (environment) to production.
+Provision ERP is a collection of ansibles roles to make easy the setup of multiples environments. Every environemnt is a distribution center, this approach makes us use the same code for all distribution centers and easy to maintain.
+
+*** Running playbooks
+#+begin_src bash
+ansible-playbook entry_point.yml -i inventory.yml -k -K
+#+end_src
+
+Entry point is the =main= playbook, this is going to ask for:
+  - User name.
+  - Environment (Sage300 SQL server name lowecase).
+  - URL (DNS url for the application, Ex: erp.vertilux.com).
+  - Port (SQL server port set on firewall rule).
+
+*** Roles
+- set-config-files
+- append-nginx-config
+- set-sidekiq-service
+- logrotate
 
 ** Tower
 A collections of playbooks to perform tasks with the tower web interface.
