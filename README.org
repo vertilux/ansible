@@ -158,6 +158,15 @@ Simply restart nginx on all servers excluding load labancer.
 ansible-playbook restart-nginx.yml -K -i inventory.yml
 #+end_src
 
+**** Restart passenger
+Phusion Passenger is an open source web application server. It handles HTTP requests, manages processes and resources, and enables administration, monitoring and problem diagnosis.
+
+#+begin_src bash
+ansible-playbook restart-passenger.yml -i inventory.yml
+#+end_src
+
+This playbook displays a prompt to enter the environment to be restarted, with this option you can restart only one environment (distribution center app).
+
 *** Logrotate
 Configuring Logrotate For Rails Production Logs.
 Running ~ansible-playbook append-logrotate.yml --extra-vars "env=ENV" -K -i inventory.yml~ will edit ~sudo vim /etc/logrotate.conf~, and at the bottom of the file the following block of code (change the ENV, ex: accltd):

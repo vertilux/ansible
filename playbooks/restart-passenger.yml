@@ -1,0 +1,12 @@
+---
+- hosts: web_servers
+  remote_user: deploy
+
+  vars_prompt:
+    - name: env
+      prompt: "Enter environment"
+      private: no
+
+  tasks:
+  - name: Restart passenger web server
+    command: /bin/bash -l -c  'touch /home/deploy/erp-{{env}}/current/tmp/restart.txt'
