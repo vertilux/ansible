@@ -3,7 +3,7 @@
 "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
 <head>
-<!-- 2021-10-19 Tue 16:31 -->
+<!-- 2021-10-25 Mon 10:42 -->
 <meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Ansible</title>
@@ -208,46 +208,51 @@
 <h2>Table of Contents</h2>
 <div id="text-table-of-contents" role="doc-toc">
 <ul>
-<li><a href="#orgeceea2c">Getting Started</a>
+<li><a href="#org5f02b25">Getting Started</a>
 <ul>
-<li><a href="#org20dc948">Install ansible on Mac</a></li>
-<li><a href="#orga185209">Install ansible on Windows</a></li>
-<li><a href="#orgd70de9b">Clone the repository.</a></li>
+<li><a href="#org53dccd7">Install ansible on Mac</a></li>
+<li><a href="#orge1d1ddd">Install ansible on Windows</a></li>
+<li><a href="#org8f9a349">Clone the repository.</a></li>
 </ul>
 </li>
-<li><a href="#orgf9c756f">Deploy</a>
+<li><a href="#org49c9ef0">Deploy</a>
 <ul>
-<li><a href="#orgce7271e">Entry point</a></li>
-<li><a href="#org98a30cf">Roles</a></li>
+<li><a href="#orga4e625e">Entry point</a></li>
+<li><a href="#org2b51b4f">Roles</a></li>
 </ul>
 </li>
-<li><a href="#org2ad8628">Playbooks</a>
+<li><a href="#orgc8a9ea5">Playbooks</a>
 <ul>
-<li><a href="#org6313ce2">Ping</a></li>
-<li><a href="#org71758d2">Sidekiq</a>
+<li><a href="#orgbc0d793">Ping</a></li>
+<li><a href="#orgdb67786">Sidekiq</a>
 <ul>
-<li><a href="#org7a7540c">Provision Service</a></li>
-<li><a href="#orgf3c1c28">Restart Sidekiq</a></li>
+<li><a href="#orgd91a10d">Provision Service</a></li>
+<li><a href="#orgc33987f">Restart Sidekiq</a></li>
 </ul>
 </li>
-<li><a href="#orgb9eaf7b">Nginx Webserver</a>
+<li><a href="#org8fea49a">Nginx Webserver</a>
 <ul>
-<li><a href="#orgcb8fbf4">Append Nginx Configuration</a></li>
-<li><a href="#org88966c1">Restart Nginx</a></li>
-<li><a href="#orga87063f">Restart passenger</a></li>
+<li><a href="#org36ba076">Append Nginx Configuration</a></li>
+<li><a href="#orgdb13696">Restart Nginx</a></li>
+<li><a href="#org71ce088">Restart passenger</a></li>
 </ul>
 </li>
-<li><a href="#org814d82b">Logrotate</a></li>
-<li><a href="#orgc7bffbc">Maintenance</a></li>
-</ul>
-</li>
-<li><a href="#orge0990ad">Provision ERP</a>
+<li><a href="#org7908ca2">Logrotate</a></li>
+<li><a href="#org3fb7c92">Maintenance</a></li>
+<li><a href="#orgc4430a9">Append Env Variable</a>
 <ul>
-<li><a href="#orga918cc3">Running playbooks</a></li>
-<li><a href="#org3e68403">Roles</a></li>
+<li><a href="#org028b304">Persisten Env Variables</a></li>
 </ul>
 </li>
-<li><a href="#orgd3090fc">Tower</a></li>
+</ul>
+</li>
+<li><a href="#orgecb18c7">Provision ERP</a>
+<ul>
+<li><a href="#orge683536">Running playbooks</a></li>
+<li><a href="#orgf4ba6c2">Roles</a></li>
+</ul>
+</li>
+<li><a href="#org081a6c8">Tower</a></li>
 </ul>
 </div>
 </div>
@@ -255,26 +260,26 @@
 This repository is a collection of ansible playbooks implemented by Vertilux&rsquo;s IT dept to perform some server automations.
 </p>
 
-<div id="outline-container-orgeceea2c" class="outline-2">
-<h2 id="orgeceea2c">Getting Started</h2>
-<div class="outline-text-2" id="text-orgeceea2c">
+<div id="outline-container-org5f02b25" class="outline-2">
+<h2 id="org5f02b25">Getting Started</h2>
+<div class="outline-text-2" id="text-org5f02b25">
 <p>
 Make sure ansible is installed on your machin, to install ansible:
 </p>
 </div>
 
-<div id="outline-container-org20dc948" class="outline-3">
-<h3 id="org20dc948">Install ansible on Mac</h3>
-<div class="outline-text-3" id="text-org20dc948">
+<div id="outline-container-org53dccd7" class="outline-3">
+<h3 id="org53dccd7">Install ansible on Mac</h3>
+<div class="outline-text-3" id="text-org53dccd7">
 <p>
 <code>brew install ansible</code>
 </p>
 </div>
 </div>
 
-<div id="outline-container-orga185209" class="outline-3">
-<h3 id="orga185209">Install ansible on Windows</h3>
-<div class="outline-text-3" id="text-orga185209">
+<div id="outline-container-orge1d1ddd" class="outline-3">
+<h3 id="orge1d1ddd">Install ansible on Windows</h3>
+<div class="outline-text-3" id="text-orge1d1ddd">
 <p>
 Probably the best option is to installed Ubuntu on WSL (Windows Subsytem for Linux).
 </p>
@@ -302,9 +307,9 @@ Now install ansible and press Y when ask for.
 </div>
 </div>
 
-<div id="outline-container-orgd70de9b" class="outline-3">
-<h3 id="orgd70de9b">Clone the repository.</h3>
-<div class="outline-text-3" id="text-orgd70de9b">
+<div id="outline-container-org8f9a349" class="outline-3">
+<h3 id="org8f9a349">Clone the repository.</h3>
+<div class="outline-text-3" id="text-org8f9a349">
 <div class="org-src-container">
 <pre class="src src-bash"><span style="color: #bd93f9;">git</span> clone <span style="color: #bd93f9;">git</span>@github.com:vertilux/ansible.git
 </pre>
@@ -317,15 +322,15 @@ Then cd into the ansible directory: $ <code>cd  ansible</code>
 </div>
 </div>
 
-<div id="outline-container-orgf9c756f" class="outline-2">
-<h2 id="orgf9c756f">Deploy</h2>
-<div class="outline-text-2" id="text-orgf9c756f">
+<div id="outline-container-org49c9ef0" class="outline-2">
+<h2 id="org49c9ef0">Deploy</h2>
+<div class="outline-text-2" id="text-org49c9ef0">
 <p>
 This playbook contains multiples roles to deploy new versions or updates to production.
 </p>
 
 
-<div id="org30bf9bc" class="figure">
+<div id="org90b20ff" class="figure">
 <p><img src="infrastructure-diagram.png" alt="infrastructure-diagram.png" />
 </p>
 </div>
@@ -349,9 +354,9 @@ deploy ALL=(ALL) NOPASSWD:ALL
 </pre>
 </div>
 
-<div id="outline-container-orgce7271e" class="outline-3">
-<h3 id="orgce7271e">Entry point</h3>
-<div class="outline-text-3" id="text-orgce7271e">
+<div id="outline-container-orga4e625e" class="outline-3">
+<h3 id="orga4e625e">Entry point</h3>
+<div class="outline-text-3" id="text-orga4e625e">
 <p>
 This playbook execute the different roles that will run
 </p>
@@ -363,9 +368,9 @@ This playbook execute the different roles that will run
 </div>
 </div>
 
-<div id="outline-container-org98a30cf" class="outline-3">
-<h3 id="org98a30cf">Roles</h3>
-<div class="outline-text-3" id="text-org98a30cf">
+<div id="outline-container-org2b51b4f" class="outline-3">
+<h3 id="org2b51b4f">Roles</h3>
+<div class="outline-text-3" id="text-org2b51b4f">
 <table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
 
 
@@ -426,17 +431,17 @@ This playbook execute the different roles that will run
 </div>
 </div>
 
-<div id="outline-container-org2ad8628" class="outline-2">
-<h2 id="org2ad8628">Playbooks</h2>
-<div class="outline-text-2" id="text-org2ad8628">
+<div id="outline-container-orgc8a9ea5" class="outline-2">
+<h2 id="orgc8a9ea5">Playbooks</h2>
+<div class="outline-text-2" id="text-orgc8a9ea5">
 <p>
 A collections o simple playbooks to perform different tasks.
 </p>
 </div>
 
-<div id="outline-container-org6313ce2" class="outline-3">
-<h3 id="org6313ce2">Ping</h3>
-<div class="outline-text-3" id="text-org6313ce2">
+<div id="outline-container-orgbc0d793" class="outline-3">
+<h3 id="orgbc0d793">Ping</h3>
+<div class="outline-text-3" id="text-orgbc0d793">
 <p>
 Try to connect to host, verify a usable python and return <code>pong</code> on success.
 </p>
@@ -448,17 +453,17 @@ Try to connect to host, verify a usable python and return <code>pong</code> on s
 </div>
 </div>
 
-<div id="outline-container-org71758d2" class="outline-3">
-<h3 id="org71758d2">Sidekiq</h3>
-<div class="outline-text-3" id="text-org71758d2">
+<div id="outline-container-orgdb67786" class="outline-3">
+<h3 id="orgdb67786">Sidekiq</h3>
+<div class="outline-text-3" id="text-orgdb67786">
 <p>
 Background processing for ruby. Sidekiq uses threads to handle jobs at the same time in the same process. It is integrated tightly with Rails to make background processing dead simple.
 </p>
 </div>
 
-<div id="outline-container-org7a7540c" class="outline-4">
-<h4 id="org7a7540c">Provision Service</h4>
-<div class="outline-text-4" id="text-org7a7540c">
+<div id="outline-container-orgd91a10d" class="outline-4">
+<h4 id="orgd91a10d">Provision Service</h4>
+<div class="outline-text-4" id="text-orgd91a10d">
 <p>
 Running sidekiq as a system service with systemd, this will ensure the process is restarted if Sidekiq crashes.
 Here is an example systemd file:
@@ -507,9 +512,9 @@ With the following playbook the service is provision on all servers.
 </div>
 </div>
 
-<div id="outline-container-orgf3c1c28" class="outline-4">
-<h4 id="orgf3c1c28">Restart Sidekiq</h4>
-<div class="outline-text-4" id="text-orgf3c1c28">
+<div id="outline-container-orgc33987f" class="outline-4">
+<h4 id="orgc33987f">Restart Sidekiq</h4>
+<div class="outline-text-4" id="text-orgc33987f">
 <div class="org-src-container">
 <pre class="src src-bash">ansible-playbook restart-sidekiq.yml -K -i inventory.yml
 </pre>
@@ -518,17 +523,17 @@ With the following playbook the service is provision on all servers.
 </div>
 </div>
 
-<div id="outline-container-orgb9eaf7b" class="outline-3">
-<h3 id="orgb9eaf7b">Nginx Webserver</h3>
-<div class="outline-text-3" id="text-orgb9eaf7b">
+<div id="outline-container-org8fea49a" class="outline-3">
+<h3 id="org8fea49a">Nginx Webserver</h3>
+<div class="outline-text-3" id="text-org8fea49a">
 <p>
 Nginx is a web server that can be used as a reverse proxy, load balancer and HTTP cache.
 </p>
 </div>
 
-<div id="outline-container-orgcb8fbf4" class="outline-4">
-<h4 id="orgcb8fbf4">Append Nginx Configuration</h4>
-<div class="outline-text-4" id="text-orgcb8fbf4">
+<div id="outline-container-org36ba076" class="outline-4">
+<h4 id="org36ba076">Append Nginx Configuration</h4>
+<div class="outline-text-4" id="text-org36ba076">
 <p>
 This playbook will append a configuration block to the default configuration with the env passed. This is the easy way to when deploying a new distribution center.
 </p>
@@ -540,9 +545,9 @@ This playbook will append a configuration block to the default configuration wit
 </div>
 </div>
 
-<div id="outline-container-org88966c1" class="outline-4">
-<h4 id="org88966c1">Restart Nginx</h4>
-<div class="outline-text-4" id="text-org88966c1">
+<div id="outline-container-orgdb13696" class="outline-4">
+<h4 id="orgdb13696">Restart Nginx</h4>
+<div class="outline-text-4" id="text-orgdb13696">
 <p>
 Simply restart nginx on all servers excluding load labancer.
 </p>
@@ -554,9 +559,9 @@ Simply restart nginx on all servers excluding load labancer.
 </div>
 </div>
 
-<div id="outline-container-orga87063f" class="outline-4">
-<h4 id="orga87063f">Restart passenger</h4>
-<div class="outline-text-4" id="text-orga87063f">
+<div id="outline-container-org71ce088" class="outline-4">
+<h4 id="org71ce088">Restart passenger</h4>
+<div class="outline-text-4" id="text-org71ce088">
 <p>
 Phusion Passenger is an open source web application server. It handles HTTP requests, manages processes and resources, and enables administration, monitoring and problem diagnosis.
 </p>
@@ -573,9 +578,9 @@ This playbook displays a prompt to enter the environment to be restarted, with t
 </div>
 </div>
 
-<div id="outline-container-org814d82b" class="outline-3">
-<h3 id="org814d82b">Logrotate</h3>
-<div class="outline-text-3" id="text-org814d82b">
+<div id="outline-container-org7908ca2" class="outline-3">
+<h3 id="org7908ca2">Logrotate</h3>
+<div class="outline-text-3" id="text-org7908ca2">
 <p>
 Configuring Logrotate For Rails Production Logs.
 Running <code>ansible-playbook append-logrotate.yml --extra-vars "env=ENV" -K -i inventory.yml</code> will edit <code>sudo vim /etc/logrotate.conf</code>, and at the bottom of the file the following block of code (change the ENV, ex: accltd):
@@ -618,9 +623,9 @@ Then the playbook will run: `sudo /usr/sbin/logrotate -f /etc/logrotate.conf`
 </div>
 </div>
 
-<div id="outline-container-orgc7bffbc" class="outline-3">
-<h3 id="orgc7bffbc">Maintenance</h3>
-<div class="outline-text-3" id="text-orgc7bffbc">
+<div id="outline-container-org3fb7c92" class="outline-3">
+<h3 id="org3fb7c92">Maintenance</h3>
+<div class="outline-text-3" id="text-org3fb7c92">
 <p>
 Sometimes there is a need to set the ERP Web application into maintenance mode; when an item change needs to be run or when the we need to upgrade Sage. For this scenarios the folloging playbook is the easier way to set all instances in maintenance mode.
 </p>
@@ -642,19 +647,65 @@ Put everything into maintenance.
 </div>
 </div>
 </div>
+
+<div id="outline-container-orgc4430a9" class="outline-3">
+<h3 id="orgc4430a9">Append Env Variable</h3>
+<div class="outline-text-3" id="text-orgc4430a9">
+<p>
+Environment variables are a set of dynamic named values, stored within the system that are used by applications launched. In simple words, an environment variable is a variable with a name and an associated value.
+</p>
 </div>
 
-<div id="outline-container-orge0990ad" class="outline-2">
-<h2 id="orge0990ad">Provision ERP</h2>
-<div class="outline-text-2" id="text-orge0990ad">
+<div id="outline-container-org028b304" class="outline-4">
+<h4 id="org028b304">Persisten Env Variables</h4>
+<div class="outline-text-4" id="text-org028b304">
+<p>
+To make Environment variables persistent you need to define those variables in the bash configuration files. In most Linux distributions when you start a new session, environment variables are read from the following files:
+</p>
+
+<ul class="org-ul">
+<li><p>
+<code>/etc/environment</code>: Use this file to set up system-wide environment variables. Variables in this file are set in the following format:
+</p>
+<div class="org-src-container">
+<pre class="src src-bash"><span style="color: #ffc9e8;">FOO</span>=bar
+<span style="color: #ffc9e8;">VAR_TEST</span>=<span style="color: #f1fa8c;">"Test Var"</span>
+</pre>
+</div></li>
+
+<li><p>
+<code>/etc/profile</code>: Variables set in this file are loaded whenever a bash login shell is entered. When declaring environment variables in this file you need to use the export command:
+</p>
+<div class="org-src-container">
+<pre class="src src-bash"><span style="color: #ffb86c;">export</span> <span style="color: #ffc9e8;">FOO</span>=<span style="color: #f1fa8c;">"bar"</span>
+<span style="color: #ffb86c;">export</span> <span style="color: #ffc9e8;">VAR_TEST</span>=<span style="color: #f1fa8c;">"Test Bar"</span>
+</pre>
+</div></li>
+</ul>
+
+<p>
+For our apps we used <code>/etc/profile</code>, to add (append) a new env variables just need to run the following playbook:
+</p>
+<div class="org-src-container">
+<pre class="src src-bash">ansible-playbook append-env-variable.yml -K -i inventory.yml
+</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgecb18c7" class="outline-2">
+<h2 id="orgecb18c7">Provision ERP</h2>
+<div class="outline-text-2" id="text-orgecb18c7">
 <p>
 Provision ERP is a collection of ansibles roles to make easy the setup of multiples environments. Every environemnt is a distribution center, this approach makes us use the same code for all distribution centers and easy to maintain.
 </p>
 </div>
 
-<div id="outline-container-orga918cc3" class="outline-3">
-<h3 id="orga918cc3">Running playbooks</h3>
-<div class="outline-text-3" id="text-orga918cc3">
+<div id="outline-container-orge683536" class="outline-3">
+<h3 id="orge683536">Running playbooks</h3>
+<div class="outline-text-3" id="text-orge683536">
 <div class="org-src-container">
 <pre class="src src-bash">ansible-playbook entry_point.yml -i inventory.yml -k -K
 </pre>
@@ -672,9 +723,9 @@ Entry point is the <code>main</code> playbook, this is going to ask for:
 </div>
 </div>
 
-<div id="outline-container-org3e68403" class="outline-3">
-<h3 id="org3e68403">Roles</h3>
-<div class="outline-text-3" id="text-org3e68403">
+<div id="outline-container-orgf4ba6c2" class="outline-3">
+<h3 id="orgf4ba6c2">Roles</h3>
+<div class="outline-text-3" id="text-orgf4ba6c2">
 <ul class="org-ul">
 <li>set-config-files</li>
 <li>append-nginx-config</li>
@@ -685,9 +736,9 @@ Entry point is the <code>main</code> playbook, this is going to ask for:
 </div>
 </div>
 
-<div id="outline-container-orgd3090fc" class="outline-2">
-<h2 id="orgd3090fc">Tower</h2>
-<div class="outline-text-2" id="text-orgd3090fc">
+<div id="outline-container-org081a6c8" class="outline-2">
+<h2 id="org081a6c8">Tower</h2>
+<div class="outline-text-2" id="text-org081a6c8">
 <p>
 A collections of playbooks to perform tasks with the tower web interface.
 </p>
@@ -696,7 +747,7 @@ A collections of playbooks to perform tasks with the tower web interface.
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: VTX IT Department</p>
-<p class="date">Created: 2021-10-19 Tue 16:31</p>
+<p class="date">Created: 2021-10-25 Mon 10:42</p>
 </div>
 </body>
 </html>
