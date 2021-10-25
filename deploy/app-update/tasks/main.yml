@@ -7,7 +7,7 @@
   register: app
 
 - name: Git Pull from Version Control
-  command: git pull origin bump-rails
+  command: git pull origin {{branch}}
   args:
     chdir: /home/deploy/erp-{{env}}
   when: app.stat.exists
@@ -22,7 +22,7 @@
   when: app.stat.exists == false
 
 - name: Git clone form Version Control
-  command: git clone -b bump-rails git@github.com:lepepe/vertilux-accpac.git /home/deploy/erp-{{env}}
+  command: git clone -b {{branch}} git@github.com:lepepe/vertilux-accpac.git /home/deploy/erp-{{env}}
   args:
     chdir: /home/deploy/erp-{{env}}
   when: app.stat.exists == false

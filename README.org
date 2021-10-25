@@ -212,6 +212,31 @@ Put everything into maintenance.
 ansible-playbook maintenance-mode-all.yml -K -i inventory.yml
 #+end_src
 
+*** Append Env Variable
+Environment variables are a set of dynamic named values, stored within the system that are used by applications launched. In simple words, an environment variable is a variable with a name and an associated value.
+
+**** Persisten Env Variables
+To make Environment variables persistent you need to define those variables in the bash configuration files. In most Linux distributions when you start a new session, environment variables are read from the following files:
+
+- =/etc/environment=: Use this file to set up system-wide environment variables. Variables in this file are set in the following format:
+ #+begin_src bash
+FOO=bar
+VAR_TEST="Test Var"
+ #+end_src
+
+- =/etc/profile=: Variables set in this file are loaded whenever a bash login shell is entered. When declaring environment variables in this file you need to use the export command:
+ #+begin_src bash
+export FOO="bar"
+export VAR_TEST="Test Bar"
+ #+end_src
+
+For our apps we used =/etc/profile=, to add (append) a new env variables just need to run the following playbook:
+#+begin_src bash
+ansible-playbook append-env-variable.yml -K -i inventory.yml
+#+end_src
+
+#+RESULTS:
+
 ** Provision ERP
 Provision ERP is a collection of ansibles roles to make easy the setup of multiples environments. Every environemnt is a distribution center, this approach makes us use the same code for all distribution centers and easy to maintain.
 

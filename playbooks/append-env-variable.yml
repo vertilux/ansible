@@ -1,0 +1,19 @@
+---
+- hosts: web_servers
+  remote_user: deploy
+  become: yes
+
+  vars_prompt:
+    - name: env
+      prompt: "Enter environment key"
+      private: no
+    - name: val
+      prompt: "Enter environment value"
+      private: no
+
+  tasks:
+    - name: Insert an env varible
+      # echo {{env}}={{val}} >> /etc/profile
+      lineinfile:
+        path: /etc/profile
+        line: export {{env}}='{{val}}'
