@@ -3,7 +3,7 @@
 "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
 <head>
-<!-- 2021-10-28 Thu 23:28 -->
+<!-- 2021-10-29 Fri 16:54 -->
 <meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Ansible</title>
@@ -208,72 +208,82 @@
 <h2>Table of Contents</h2>
 <div id="text-table-of-contents" role="doc-toc">
 <ul>
-<li><a href="#org5be09b4">Getting Started</a>
+<li><a href="#orgacbc4b8">Getting Started</a>
 <ul>
-<li><a href="#orgfd3f804">Install ansible on Mac</a></li>
-<li><a href="#org0ce655e">Install ansible on Windows</a></li>
-<li><a href="#orgf53688a">Clone the repository.</a></li>
+<li><a href="#orgc22928d">Install ansible on Mac</a></li>
+<li><a href="#orgc8ae649">Install ansible on Windows</a></li>
+<li><a href="#orgf1b451c">Clone the repository.</a></li>
 </ul>
 </li>
-<li><a href="#orgccb924f">Deploy</a>
+<li><a href="#orgae70f23">Deploy</a>
 <ul>
-<li><a href="#orgd90e2dc">Entry point</a></li>
-<li><a href="#orgbe7016a">Roles</a></li>
+<li><a href="#org9c25fb2">Entry point</a></li>
+<li><a href="#orga48fffb">Roles</a></li>
 </ul>
 </li>
-<li><a href="#orgffdc054">Playbooks</a>
+<li><a href="#org786c36a">Playbooks</a>
 <ul>
-<li><a href="#org2d3c062">Ping</a></li>
-<li><a href="#org1f35b40">Sidekiq</a>
+<li><a href="#orgf30f908">Ping</a></li>
+<li><a href="#org8d30a28">Sidekiq</a>
 <ul>
-<li><a href="#orga280afc">Provision Service</a></li>
-<li><a href="#orgfc8f320">Restart Sidekiq</a></li>
+<li><a href="#org9d916d3">Provision Service</a></li>
+<li><a href="#org427efb2">Restart Sidekiq</a></li>
 </ul>
 </li>
-<li><a href="#org175be5a">Nginx Webserver</a>
+<li><a href="#orgbd4029b">Nginx Webserver</a>
 <ul>
-<li><a href="#orgbef1348">Append Nginx Configuration</a></li>
-<li><a href="#org0855d62">Restart Nginx</a></li>
-<li><a href="#org3d185ce">Restart passenger</a></li>
+<li><a href="#orgce5fab8">Append Nginx Configuration</a></li>
+<li><a href="#orgad93661">Restart Nginx</a></li>
+<li><a href="#org2016e57">Restart passenger</a></li>
 </ul>
 </li>
-<li><a href="#org0aab81d">Logrotate</a></li>
-<li><a href="#orgfcd47a0">Maintenance</a></li>
-<li><a href="#org2fccc56">Append Env Variable</a>
+<li><a href="#orga111f0b">Logrotate</a></li>
+<li><a href="#org9cc752e">Maintenance</a></li>
+<li><a href="#orga25a52c">Append Env Variable</a>
 <ul>
-<li><a href="#org54bc439">Persistent Env Variables</a></li>
-</ul>
-</li>
-</ul>
-</li>
-<li><a href="#org9b55a8c">Provision ERP</a>
-<ul>
-<li><a href="#org527bcdf">Running playbooks</a></li>
-<li><a href="#org345a310">Roles</a></li>
-</ul>
-</li>
-<li><a href="#org1c44691">Tower</a></li>
-<li><a href="#orgb76ee47">Windows Management</a>
-<ul>
-<li><a href="#orgd7897bf">Why Automate Windows Hosts?</a></li>
-<li><a href="#org8ef58cd">What’s Required?</a></li>
-<li><a href="#orgd95882e">Trobleshooting WinRM</a>
-<ul>
-<li><a href="#orgf638f2c">Sets WinRM to Basic Authentication</a></li>
-<li><a href="#org43609ed">Sets WinRM to allows unencrypted traffic</a></li>
-<li><a href="#org2dee28e">Aditional Issues</a></li>
-</ul>
-</li>
-<li><a href="#org1ef65c6">Install pywinrm</a></li>
-<li><a href="#orgc04cae0">References</a></li>
-<li><a href="#orgd870ca0">Playbooks</a>
-<ul>
-<li><a href="#org60d5b2f">Restart Granite</a></li>
+<li><a href="#orgf89061d">Persistent Env Variables</a></li>
 </ul>
 </li>
 </ul>
 </li>
-<li><a href="#orgb5abc22"><span class="todo TODO">TODO</span> Ansible todo list</a></li>
+<li><a href="#org67c4910">Provision ERP</a>
+<ul>
+<li><a href="#org40ac5aa">Running playbooks</a></li>
+<li><a href="#orge7dc4f9">Roles</a></li>
+</ul>
+</li>
+<li><a href="#org9a16ee1">Tower</a></li>
+<li><a href="#orgb67d1bc">Windows Management</a>
+<ul>
+<li><a href="#org27fd704">Why Automate Windows Hosts?</a></li>
+<li><a href="#orged484df">What’s Required?</a></li>
+<li><a href="#org394a2cf">Trobleshooting WinRM</a>
+<ul>
+<li><a href="#org87eed8e">Sets WinRM to Basic Authentication</a></li>
+<li><a href="#orgfc1c95d">Sets WinRM to allows unencrypted traffic</a></li>
+<li><a href="#org036d5b3">Aditional Issues</a></li>
+</ul>
+</li>
+<li><a href="#orgf36014f">Install pywinrm</a></li>
+<li><a href="#org19689d7">References</a></li>
+<li><a href="#org822654a">Playbooks</a>
+<ul>
+<li><a href="#orgecaba14">Restart Granite</a></li>
+<li><a href="#orgc22c9c5">Restart Machine</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li><a href="#orgcdac27f">Secure sensitive data</a>
+<ul>
+<li><a href="#org2f3982e">Create an encrypted file</a></li>
+<li><a href="#org9cca92e">Editing the encrypted file</a></li>
+<li><a href="#org6027dd7">Decrypting a file</a></li>
+<li><a href="#org47e932c">Reset the file password</a></li>
+<li><a href="#orgad81059">Help</a></li>
+</ul>
+</li>
+<li><a href="#org7deb993"><span class="todo TODO">TODO</span> Ansible todo list</a></li>
 </ul>
 </div>
 </div>
@@ -281,26 +291,26 @@
 This repository is a collection of ansible playbooks implemented by Vertilux&rsquo;s IT dept to perform some server automations.
 </p>
 
-<div id="outline-container-org5be09b4" class="outline-2">
-<h2 id="org5be09b4">Getting Started</h2>
-<div class="outline-text-2" id="text-org5be09b4">
+<div id="outline-container-orgacbc4b8" class="outline-2">
+<h2 id="orgacbc4b8">Getting Started</h2>
+<div class="outline-text-2" id="text-orgacbc4b8">
 <p>
 Make sure ansible is installed on your machin, to install ansible:
 </p>
 </div>
 
-<div id="outline-container-orgfd3f804" class="outline-3">
-<h3 id="orgfd3f804">Install ansible on Mac</h3>
-<div class="outline-text-3" id="text-orgfd3f804">
+<div id="outline-container-orgc22928d" class="outline-3">
+<h3 id="orgc22928d">Install ansible on Mac</h3>
+<div class="outline-text-3" id="text-orgc22928d">
 <p>
 <code>brew install ansible</code>
 </p>
 </div>
 </div>
 
-<div id="outline-container-org0ce655e" class="outline-3">
-<h3 id="org0ce655e">Install ansible on Windows</h3>
-<div class="outline-text-3" id="text-org0ce655e">
+<div id="outline-container-orgc8ae649" class="outline-3">
+<h3 id="orgc8ae649">Install ansible on Windows</h3>
+<div class="outline-text-3" id="text-orgc8ae649">
 <p>
 Probably the best option is to installed Ubuntu on WSL (Windows Subsytem for Linux).
 </p>
@@ -328,9 +338,9 @@ Now install ansible and press Y when ask for.
 </div>
 </div>
 
-<div id="outline-container-orgf53688a" class="outline-3">
-<h3 id="orgf53688a">Clone the repository.</h3>
-<div class="outline-text-3" id="text-orgf53688a">
+<div id="outline-container-orgf1b451c" class="outline-3">
+<h3 id="orgf1b451c">Clone the repository.</h3>
+<div class="outline-text-3" id="text-orgf1b451c">
 <div class="org-src-container">
 <pre class="src src-bash"><span style="color: #bd93f9;">git</span> clone <span style="color: #bd93f9;">git</span>@github.com:vertilux/ansible.git
 </pre>
@@ -343,15 +353,15 @@ Then cd into the ansible directory: $ <code>cd  ansible</code>
 </div>
 </div>
 
-<div id="outline-container-orgccb924f" class="outline-2">
-<h2 id="orgccb924f">Deploy</h2>
-<div class="outline-text-2" id="text-orgccb924f">
+<div id="outline-container-orgae70f23" class="outline-2">
+<h2 id="orgae70f23">Deploy</h2>
+<div class="outline-text-2" id="text-orgae70f23">
 <p>
 This playbook contains multiples roles to deploy new versions or updates to production.
 </p>
 
 
-<div id="orga9c7a4d" class="figure">
+<div id="org6ab37c3" class="figure">
 <p><img src="infrastructure-diagram.png" alt="infrastructure-diagram.png" />
 </p>
 </div>
@@ -375,9 +385,9 @@ deploy ALL=(ALL) NOPASSWD:ALL
 </pre>
 </div>
 
-<div id="outline-container-orgd90e2dc" class="outline-3">
-<h3 id="orgd90e2dc">Entry point</h3>
-<div class="outline-text-3" id="text-orgd90e2dc">
+<div id="outline-container-org9c25fb2" class="outline-3">
+<h3 id="org9c25fb2">Entry point</h3>
+<div class="outline-text-3" id="text-org9c25fb2">
 <p>
 This playbook execute the different roles that will run
 </p>
@@ -389,9 +399,9 @@ This playbook execute the different roles that will run
 </div>
 </div>
 
-<div id="outline-container-orgbe7016a" class="outline-3">
-<h3 id="orgbe7016a">Roles</h3>
-<div class="outline-text-3" id="text-orgbe7016a">
+<div id="outline-container-orga48fffb" class="outline-3">
+<h3 id="orga48fffb">Roles</h3>
+<div class="outline-text-3" id="text-orga48fffb">
 <table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
 
 
@@ -452,17 +462,17 @@ This playbook execute the different roles that will run
 </div>
 </div>
 
-<div id="outline-container-orgffdc054" class="outline-2">
-<h2 id="orgffdc054">Playbooks</h2>
-<div class="outline-text-2" id="text-orgffdc054">
+<div id="outline-container-org786c36a" class="outline-2">
+<h2 id="org786c36a">Playbooks</h2>
+<div class="outline-text-2" id="text-org786c36a">
 <p>
 A collections o simple playbooks to perform different tasks.
 </p>
 </div>
 
-<div id="outline-container-org2d3c062" class="outline-3">
-<h3 id="org2d3c062">Ping</h3>
-<div class="outline-text-3" id="text-org2d3c062">
+<div id="outline-container-orgf30f908" class="outline-3">
+<h3 id="orgf30f908">Ping</h3>
+<div class="outline-text-3" id="text-orgf30f908">
 <p>
 Try to connect to host, verify a usable python and return <code>pong</code> on success.
 </p>
@@ -474,17 +484,17 @@ Try to connect to host, verify a usable python and return <code>pong</code> on s
 </div>
 </div>
 
-<div id="outline-container-org1f35b40" class="outline-3">
-<h3 id="org1f35b40">Sidekiq</h3>
-<div class="outline-text-3" id="text-org1f35b40">
+<div id="outline-container-org8d30a28" class="outline-3">
+<h3 id="org8d30a28">Sidekiq</h3>
+<div class="outline-text-3" id="text-org8d30a28">
 <p>
 Background processing for ruby. Sidekiq uses threads to handle jobs at the same time in the same process. It is integrated tightly with Rails to make background processing dead simple.
 </p>
 </div>
 
-<div id="outline-container-orga280afc" class="outline-4">
-<h4 id="orga280afc">Provision Service</h4>
-<div class="outline-text-4" id="text-orga280afc">
+<div id="outline-container-org9d916d3" class="outline-4">
+<h4 id="org9d916d3">Provision Service</h4>
+<div class="outline-text-4" id="text-org9d916d3">
 <p>
 Running sidekiq as a system service with systemd, this will ensure the process is restarted if Sidekiq crashes.
 Here is an example systemd file:
@@ -533,9 +543,9 @@ With the following playbook the service is provision on all servers.
 </div>
 </div>
 
-<div id="outline-container-orgfc8f320" class="outline-4">
-<h4 id="orgfc8f320">Restart Sidekiq</h4>
-<div class="outline-text-4" id="text-orgfc8f320">
+<div id="outline-container-org427efb2" class="outline-4">
+<h4 id="org427efb2">Restart Sidekiq</h4>
+<div class="outline-text-4" id="text-org427efb2">
 <div class="org-src-container">
 <pre class="src src-bash">ansible-playbook restart-sidekiq.yml -K -i inventory.yml
 </pre>
@@ -544,17 +554,17 @@ With the following playbook the service is provision on all servers.
 </div>
 </div>
 
-<div id="outline-container-org175be5a" class="outline-3">
-<h3 id="org175be5a">Nginx Webserver</h3>
-<div class="outline-text-3" id="text-org175be5a">
+<div id="outline-container-orgbd4029b" class="outline-3">
+<h3 id="orgbd4029b">Nginx Webserver</h3>
+<div class="outline-text-3" id="text-orgbd4029b">
 <p>
 Nginx is a web server that can be used as a reverse proxy, load balancer and HTTP cache.
 </p>
 </div>
 
-<div id="outline-container-orgbef1348" class="outline-4">
-<h4 id="orgbef1348">Append Nginx Configuration</h4>
-<div class="outline-text-4" id="text-orgbef1348">
+<div id="outline-container-orgce5fab8" class="outline-4">
+<h4 id="orgce5fab8">Append Nginx Configuration</h4>
+<div class="outline-text-4" id="text-orgce5fab8">
 <p>
 This playbook will append a configuration block to the default configuration with the env passed. This is the easy way to when deploying a new distribution center.
 </p>
@@ -566,9 +576,9 @@ This playbook will append a configuration block to the default configuration wit
 </div>
 </div>
 
-<div id="outline-container-org0855d62" class="outline-4">
-<h4 id="org0855d62">Restart Nginx</h4>
-<div class="outline-text-4" id="text-org0855d62">
+<div id="outline-container-orgad93661" class="outline-4">
+<h4 id="orgad93661">Restart Nginx</h4>
+<div class="outline-text-4" id="text-orgad93661">
 <p>
 Simply restart nginx on all servers excluding load labancer.
 </p>
@@ -580,9 +590,9 @@ Simply restart nginx on all servers excluding load labancer.
 </div>
 </div>
 
-<div id="outline-container-org3d185ce" class="outline-4">
-<h4 id="org3d185ce">Restart passenger</h4>
-<div class="outline-text-4" id="text-org3d185ce">
+<div id="outline-container-org2016e57" class="outline-4">
+<h4 id="org2016e57">Restart passenger</h4>
+<div class="outline-text-4" id="text-org2016e57">
 <p>
 Phusion Passenger is an open source web application server. It handles HTTP requests, manages processes and resources, and enables administration, monitoring and problem diagnosis.
 </p>
@@ -599,9 +609,9 @@ This playbook displays a prompt to enter the environment to be restarted, with t
 </div>
 </div>
 
-<div id="outline-container-org0aab81d" class="outline-3">
-<h3 id="org0aab81d">Logrotate</h3>
-<div class="outline-text-3" id="text-org0aab81d">
+<div id="outline-container-orga111f0b" class="outline-3">
+<h3 id="orga111f0b">Logrotate</h3>
+<div class="outline-text-3" id="text-orga111f0b">
 <p>
 Configuring Logrotate For Rails Production Logs.
 Running <code>ansible-playbook append-logrotate.yml --extra-vars "env=ENV" -K -i inventory.yml</code> will edit <code>sudo vim /etc/logrotate.conf</code>, and at the bottom of the file the following block of code (change the ENV, ex: accltd):
@@ -644,9 +654,9 @@ Then the playbook will run: `sudo /usr/sbin/logrotate -f /etc/logrotate.conf`
 </div>
 </div>
 
-<div id="outline-container-orgfcd47a0" class="outline-3">
-<h3 id="orgfcd47a0">Maintenance</h3>
-<div class="outline-text-3" id="text-orgfcd47a0">
+<div id="outline-container-org9cc752e" class="outline-3">
+<h3 id="org9cc752e">Maintenance</h3>
+<div class="outline-text-3" id="text-org9cc752e">
 <p>
 Sometimes there is a need to set the ERP Web application into maintenance mode; when an item change needs to be run or when the we need to upgrade Sage. For this scenarios the folloging playbook is the easier way to set all instances in maintenance mode.
 </p>
@@ -669,17 +679,17 @@ Put everything into maintenance.
 </div>
 </div>
 
-<div id="outline-container-org2fccc56" class="outline-3">
-<h3 id="org2fccc56">Append Env Variable</h3>
-<div class="outline-text-3" id="text-org2fccc56">
+<div id="outline-container-orga25a52c" class="outline-3">
+<h3 id="orga25a52c">Append Env Variable</h3>
+<div class="outline-text-3" id="text-orga25a52c">
 <p>
 Environment variables are a set of dynamic named values, stored within the system that are used by applications launched. In simple words, an environment variable is a variable with a name and an associated value.
 </p>
 </div>
 
-<div id="outline-container-org54bc439" class="outline-4">
-<h4 id="org54bc439">Persistent Env Variables</h4>
-<div class="outline-text-4" id="text-org54bc439">
+<div id="outline-container-orgf89061d" class="outline-4">
+<h4 id="orgf89061d">Persistent Env Variables</h4>
+<div class="outline-text-4" id="text-orgf89061d">
 <p>
 To make Environment variables persistent you need to define those variables in the bash configuration files. In most Linux distributions when you start a new session, environment variables are read from the following files:
 </p>
@@ -716,17 +726,17 @@ For our apps we used <code>/etc/profile</code>, to add (append) a new env variab
 </div>
 </div>
 
-<div id="outline-container-org9b55a8c" class="outline-2">
-<h2 id="org9b55a8c">Provision ERP</h2>
-<div class="outline-text-2" id="text-org9b55a8c">
+<div id="outline-container-org67c4910" class="outline-2">
+<h2 id="org67c4910">Provision ERP</h2>
+<div class="outline-text-2" id="text-org67c4910">
 <p>
 Provision ERP is a collection of ansibles roles to make easy the setup of multiples environments. Every environemnt is a distribution center, this approach makes us use the same code for all distribution centers and easy to maintain.
 </p>
 </div>
 
-<div id="outline-container-org527bcdf" class="outline-3">
-<h3 id="org527bcdf">Running playbooks</h3>
-<div class="outline-text-3" id="text-org527bcdf">
+<div id="outline-container-org40ac5aa" class="outline-3">
+<h3 id="org40ac5aa">Running playbooks</h3>
+<div class="outline-text-3" id="text-org40ac5aa">
 <div class="org-src-container">
 <pre class="src src-bash">ansible-playbook entry_point.yml -i inventory.yml -k -K
 </pre>
@@ -744,9 +754,9 @@ Entry point is the <code>main</code> playbook, this is going to ask for:
 </div>
 </div>
 
-<div id="outline-container-org345a310" class="outline-3">
-<h3 id="org345a310">Roles</h3>
-<div class="outline-text-3" id="text-org345a310">
+<div id="outline-container-orge7dc4f9" class="outline-3">
+<h3 id="orge7dc4f9">Roles</h3>
+<div class="outline-text-3" id="text-orge7dc4f9">
 <ul class="org-ul">
 <li>set-config-files</li>
 <li>append-nginx-config</li>
@@ -757,25 +767,25 @@ Entry point is the <code>main</code> playbook, this is going to ask for:
 </div>
 </div>
 
-<div id="outline-container-org1c44691" class="outline-2">
-<h2 id="org1c44691">Tower</h2>
-<div class="outline-text-2" id="text-org1c44691">
+<div id="outline-container-org9a16ee1" class="outline-2">
+<h2 id="org9a16ee1">Tower</h2>
+<div class="outline-text-2" id="text-org9a16ee1">
 <p>
 A collections of playbooks to perform tasks with the tower web interface.
 </p>
 </div>
 </div>
-<div id="outline-container-orgb76ee47" class="outline-2">
-<h2 id="orgb76ee47">Windows Management</h2>
-<div class="outline-text-2" id="text-orgb76ee47">
+<div id="outline-container-orgb67d1bc" class="outline-2">
+<h2 id="orgb67d1bc">Windows Management</h2>
+<div class="outline-text-2" id="text-orgb67d1bc">
 <p>
 Ansible Windows module uses winrm connection, in order to execute commands in the Windows machine.
 </p>
 </div>
 
-<div id="outline-container-orgd7897bf" class="outline-3">
-<h3 id="orgd7897bf">Why Automate Windows Hosts?</h3>
-<div class="outline-text-3" id="text-orgd7897bf">
+<div id="outline-container-org27fd704" class="outline-3">
+<h3 id="org27fd704">Why Automate Windows Hosts?</h3>
+<div class="outline-text-3" id="text-org27fd704">
 <p>
 A few of the many things you can do for your Windows hosts with Ansible.Windows include:
 </p>
@@ -791,9 +801,9 @@ For a complete list of Ansible.Windows modules visit this <a href="https://docs.
 </div>
 </div>
 
-<div id="outline-container-org8ef58cd" class="outline-3">
-<h3 id="org8ef58cd">What’s Required?</h3>
-<div class="outline-text-3" id="text-org8ef58cd">
+<div id="outline-container-orged484df" class="outline-3">
+<h3 id="orged484df">What’s Required?</h3>
+<div class="outline-text-3" id="text-orged484df">
 <p>
 First, the control machine (where Ansible will be executing your Windows modules from) needs to run Linux. Second, Windows support has been evolving rapidly, so make sure to use the newest possible version of Ansible to get the latest features!
 </p>
@@ -808,9 +818,9 @@ Lastly, since Ansible connects to Windows machines and runs PowerShell scripts b
 </div>
 </div>
 
-<div id="outline-container-orgd95882e" class="outline-3">
-<h3 id="orgd95882e">Trobleshooting WinRM</h3>
-<div class="outline-text-3" id="text-orgd95882e">
+<div id="outline-container-org394a2cf" class="outline-3">
+<h3 id="org394a2cf">Trobleshooting WinRM</h3>
+<div class="outline-text-3" id="text-org394a2cf">
 <p>
 Sometimes we get an error <code>plaintext: the specified credentials were rejected by the server</code> and the reason it’s not the credentials as I know they are correct. It must be some other authentication issue.
 </p>
@@ -820,15 +830,15 @@ The problem is that it is sending credentials in plaintext over the unencrypted 
 </p>
 </div>
 
-<div id="outline-container-orgf638f2c" class="outline-4">
-<h4 id="orgf638f2c">Sets WinRM to Basic Authentication</h4>
-<div class="outline-text-4" id="text-orgf638f2c">
+<div id="outline-container-org87eed8e" class="outline-4">
+<h4 id="org87eed8e">Sets WinRM to Basic Authentication</h4>
+<div class="outline-text-4" id="text-org87eed8e">
 <div class="org-src-container">
 <pre class="src src-PowerShell">winrm set winrm/config/service/auth '@{Basic="true"}'
 </pre>
 </div>
 
-<pre class="example" id="org9e9e9ad">
+<pre class="example" id="org4d13d05">
 Auth
     Basic = true
     Kerberos = true
@@ -840,15 +850,15 @@ Auth
 </div>
 </div>
 
-<div id="outline-container-org43609ed" class="outline-4">
-<h4 id="org43609ed">Sets WinRM to allows unencrypted traffic</h4>
-<div class="outline-text-4" id="text-org43609ed">
+<div id="outline-container-orgfc1c95d" class="outline-4">
+<h4 id="orgfc1c95d">Sets WinRM to allows unencrypted traffic</h4>
+<div class="outline-text-4" id="text-orgfc1c95d">
 <div class="org-src-container">
 <pre class="src src-PowerShell">winrm set winrm/config/service '@{AllowUnencrypted="true"}'
 </pre>
 </div>
 
-<pre class="example" id="org3e76d13">
+<pre class="example" id="org40f5247">
 Service
     RootSDDL = O:NSG:BAD:P(A;;GA;;;BA)(A;;GR;;;IU)S:P(AU;FA;GA;;;WD)(AU;SA;GXGW;;;WD)
     MaxConcurrentOperations = 4294967295
@@ -877,9 +887,9 @@ Service
 </div>
 </div>
 
-<div id="outline-container-org2dee28e" class="outline-4">
-<h4 id="org2dee28e">Aditional Issues</h4>
-<div class="outline-text-4" id="text-org2dee28e">
+<div id="outline-container-org036d5b3" class="outline-4">
+<h4 id="org036d5b3">Aditional Issues</h4>
+<div class="outline-text-4" id="text-org036d5b3">
 <p>
 Because WinRM can be configured in so many different ways, errors that seem Ansible related can actually be due to problems with host setup instead.<br />
 Some examples of WinRM errors that you might see include:
@@ -899,9 +909,9 @@ Visit the <a href="https://docs.ansible.com/ansible/devel/user_guide/windows_set
 </div>
 </div>
 
-<div id="outline-container-org1ef65c6" class="outline-3">
-<h3 id="org1ef65c6">Install pywinrm</h3>
-<div class="outline-text-3" id="text-org1ef65c6">
+<div id="outline-container-orgf36014f" class="outline-3">
+<h3 id="orgf36014f">Install pywinrm</h3>
+<div class="outline-text-3" id="text-orgf36014f">
 <p>
 <code>pywinrm</code> dependencies aren’t shipped by default with Ansible, make sure you install the <code>pywinrm</code> library on the machine that Ansible is installed on. The simplest method is to run:
 </p>
@@ -913,9 +923,9 @@ Visit the <a href="https://docs.ansible.com/ansible/devel/user_guide/windows_set
 </div>
 </div>
 
-<div id="outline-container-orgc04cae0" class="outline-3">
-<h3 id="orgc04cae0">References</h3>
-<div class="outline-text-3" id="text-orgc04cae0">
+<div id="outline-container-org19689d7" class="outline-3">
+<h3 id="org19689d7">References</h3>
+<div class="outline-text-3" id="text-org19689d7">
 <ul class="org-ul">
 <li><a href="https://www.ansible.com/blog">The Inside Playbook</a></li>
 <li><a href="https://docs.ansible.com/ansible/devel/user_guide/windows_setup.html">Ansible Documentation</a></li>
@@ -923,19 +933,69 @@ Visit the <a href="https://docs.ansible.com/ansible/devel/user_guide/windows_set
 </div>
 </div>
 
-<div id="outline-container-orgd870ca0" class="outline-3">
-<h3 id="orgd870ca0">Playbooks</h3>
-<div class="outline-text-3" id="text-orgd870ca0">
+<div id="outline-container-org822654a" class="outline-3">
+<h3 id="org822654a">Playbooks</h3>
+<div class="outline-text-3" id="text-org822654a">
 </div>
-<div id="outline-container-org60d5b2f" class="outline-4">
-<h4 id="org60d5b2f">Restart Granite</h4>
-<div class="outline-text-4" id="text-org60d5b2f">
+<div id="outline-container-orgecaba14" class="outline-4">
+<h4 id="orgecaba14">Restart Granite</h4>
+<div class="outline-text-4" id="text-orgecaba14">
 <p>
 This playbbok wil use <code>win_service</code> – Manage and query Windows services to restart a chosen Granite service. For beter UX select an <code>application (country or distribution center)</code> from the prompt menu.
 </p>
 
 <div class="org-src-container">
-<pre class="src src-bash">ansible-playbook restart-granite-services.yml -i inventor
+<pre class="src src-bash">ansible-playbook restart-granite-services.yml -i inventory --vault-password-file group_vars/vault_pass.txt
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgc22c9c5" class="outline-4">
+<h4 id="orgc22c9c5">Restart Machine</h4>
+<div class="outline-text-4" id="text-orgc22c9c5">
+<p>
+Reboot a Windows machine, wait for it to go down, come back up, and respond to commands. In order to safely limiting to run this playbook on a single machine we using <code>--extra-vars</code> to especify the host.
+</p>
+
+<p>
+Running the playbook:<br />
+If <code>target</code> isn&rsquo;t defined, the playbook does nothing. A group from the hosts file can also be passed through if need be.
+</p>
+
+<p>
+<b>Playbook targeting a single host:</b>
+</p>
+<div class="org-src-container">
+<pre class="src src-bash">ansible-playbook restart-server.yml --extra-vars=<span style="color: #f1fa8c;">"target=granite_dr"</span> --vault-password-file group_vars/vault_pass.txt -i inventory
+</pre>
+</div>
+
+<p>
+<b>Playbook with a group of hosts:</b>
+</p>
+<div class="org-src-container">
+<pre class="src src-bash">ansible-playbook restart-server.yml --extra-vars=<span style="color: #f1fa8c;">"target=granite"</span> --vault-password-file group_vars/vault_pass.txt -i inventory
+</pre>
+</div>
+
+<p>
+<b>Listing hosts:</b>
+</p>
+
+<p>
+If you want to list all available hosts in the inventory, run:
+</p>
+<div class="org-src-container">
+<pre class="src src-bash">ansible all --list-hosts
+</pre>
+</div>
+
+<p>
+If you want to list that match a pattern you can use <code>list-hosts.yml</code> playbook and pass the option <code>--list-hosts</code>.
+</p>
+<div class="org-src-container">
+<pre class="src src-bash">ansible-playbook list-hosts.yml -i inventory --list-hosts --extra-vars=<span style="color: #f1fa8c;">"target=granite"</span>
 </pre>
 </div>
 </div>
@@ -943,9 +1003,101 @@ This playbbok wil use <code>win_service</code> – Manage and query Windows serv
 </div>
 </div>
 
-<div id="outline-container-orgb5abc22" class="outline-2">
-<h2 id="orgb5abc22"><span class="todo TODO">TODO</span> Ansible todo list</h2>
-<div class="outline-text-2" id="text-orgb5abc22">
+<div id="outline-container-orgcdac27f" class="outline-2">
+<h2 id="orgcdac27f">Secure sensitive data</h2>
+<div class="outline-text-2" id="text-orgcdac27f">
+<p>
+Use Ansible vault to protect sensitive data witin playbooks and roles. Ansible Vault performs various operations. Specifically, it can:
+</p>
+<ul class="org-ul">
+<li>Encrypt a file</li>
+<li>Decrypt a file</li>
+<li>View an encrypted file without breaking the encryption</li>
+<li>Edit an encrypted file</li>
+</ul>
+</div>
+
+<div id="outline-container-org2f3982e" class="outline-3">
+<h3 id="org2f3982e">Create an encrypted file</h3>
+<div class="outline-text-3" id="text-org2f3982e">
+<p>
+The <code>ansible-vault create</code> command is used to create the encrypted file.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-bash">ansible-vault create vault.yml
+</pre>
+</div>
+
+<p>
+This commland will ask for a password and then ask where to put your content.
+</p>
+<pre class="example" id="orgf49bf0f">
+$ANSIBLE_VAULT;1.1;AES256
+32373330386330643061613237393466393363333031303965383063316338393261616134353233
+6364623038303966323834396636646463613837373461380a303662373161393466326139383565
+64396538393562343464666337633337353130306365666637373266393965633766366436623836
+3430396234626533340a613637393563333131626665626535393462653139346563383062343535
+6335
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org9cca92e" class="outline-3">
+<h3 id="org9cca92e">Editing the encrypted file</h3>
+<div class="outline-text-3" id="text-org9cca92e">
+<p>
+If the file is encrypted and changes are required, use the <code>edit</code> command.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-bash">ansible-vault create vault.yml
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org6027dd7" class="outline-3">
+<h3 id="org6027dd7">Decrypting a file</h3>
+<div class="outline-text-3" id="text-org6027dd7">
+<p>
+The <code>ansible-vault decrypt</code> command is used to decrypt the encrypted file.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-bash">ansible-vault decrypt vault.yml
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org47e932c" class="outline-3">
+<h3 id="org47e932c">Reset the file password</h3>
+<div class="outline-text-3" id="text-org47e932c">
+<p>
+Use the <code>ansible-vault rekey</code> command to reset the encrypted file password.
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgad81059" class="outline-3">
+<h3 id="orgad81059">Help</h3>
+<div class="outline-text-3" id="text-orgad81059">
+<p>
+Other ansible-vault commands available are seen via:
+</p>
+
+<div class="org-src-container">
+<pre class="src src-bash">ansible-vault -h
+</pre>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org7deb993" class="outline-2">
+<h2 id="org7deb993"><span class="todo TODO">TODO</span> Ansible todo list</h2>
+<div class="outline-text-2" id="text-org7deb993">
 <ul class="org-ul">
 <li class="off"><code>[&#xa0;]</code> Create a bash script to group and execute playbooks</li>
 <li class="off"><code>[&#xa0;]</code> Extend windows module</li>
@@ -957,7 +1109,7 @@ This playbbok wil use <code>win_service</code> – Manage and query Windows serv
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: VTX IT Department</p>
-<p class="date">Created: 2021-10-28 Thu 23:28</p>
+<p class="date">Created: 2021-10-29 Fri 16:54</p>
 </div>
 </body>
 </html>

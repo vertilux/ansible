@@ -1,5 +1,7 @@
 ---
 - hosts: vx2
+  vars_files:
+    - "group_vars/main.yml"
 
   vars_prompt:
   - name: service

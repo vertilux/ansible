@@ -1,2 +1,3 @@
 *.retry
 *.swp
+/windows/group_vars/vault_pass.txt

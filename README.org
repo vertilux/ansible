@@ -357,7 +357,83 @@ pip install pywinrm
 This playbbok wil use ~win_service~ – Manage and query Windows services to restart a chosen Granite service. For beter UX select an =application (country or distribution center)= from the prompt menu.
 
 #+begin_src bash
-ansible-playbook restart-granite-services.yml -i inventor
+ansible-playbook restart-granite-services.yml -i inventory --vault-password-file group_vars/vault_pass.txt
+#+end_src
+
+**** Restart Machine
+Reboot a Windows machine, wait for it to go down, come back up, and respond to commands. In order to safely limiting to run this playbook on a single machine we using =--extra-vars= to especify the host.
+
+Running the playbook:\\
+If =target= isn't defined, the playbook does nothing. A group from the hosts file can also be passed through if need be.
+
+ *Playbook targeting a single host:*
+#+begin_src bash
+ansible-playbook restart-server.yml --extra-vars="target=granite_dr" --vault-password-file group_vars/vault_pass.txt -i inventory
+#+end_src
+
+*Playbook with a group of hosts:*
+#+begin_src bash
+ansible-playbook restart-server.yml --extra-vars="target=granite" --vault-password-file group_vars/vault_pass.txt -i inventory
+#+end_src
+
+*Listing hosts:*
+
+If you want to list all available hosts in the inventory, run:
+#+begin_src bash
+ansible all --list-hosts
+#+end_src
+
+If you want to list that match a pattern you can use =list-hosts.yml= playbook and pass the option =--list-hosts=.
+#+begin_src bash
+ansible-playbook list-hosts.yml -i inventory --list-hosts --extra-vars="target=granite"
+#+end_src
+
+** Secure sensitive data
+Use Ansible vault to protect sensitive data witin playbooks and roles. Ansible Vault performs various operations. Specifically, it can:
++ Encrypt a file
++ Decrypt a file
++ View an encrypted file without breaking the encryption
++ Edit an encrypted file
+
+*** Create an encrypted file
+The =ansible-vault create= command is used to create the encrypted file.
+
+#+begin_src bash
+ansible-vault create vault.yml
+#+end_src
+
+This commland will ask for a password and then ask where to put your content.
+#+begin_example
+$ANSIBLE_VAULT;1.1;AES256
+32373330386330643061613237393466393363333031303965383063316338393261616134353233
+6364623038303966323834396636646463613837373461380a303662373161393466326139383565
+64396538393562343464666337633337353130306365666637373266393965633766366436623836
+3430396234626533340a613637393563333131626665626535393462653139346563383062343535
+6335
+#+end_example
+
+*** Editing the encrypted file
+If the file is encrypted and changes are required, use the =edit= command.
+
+#+begin_src bash
+ansible-vault create vault.yml
+#+end_src
+
+*** Decrypting a file
+The =ansible-vault decrypt= command is used to decrypt the encrypted file.
+
+#+begin_src bash
+ansible-vault decrypt vault.yml
+#+end_src
+
+*** Reset the file password
+Use the =ansible-vault rekey= command to reset the encrypted file password.
+
+*** Help
+Other ansible-vault commands available are seen via:
+
+#+begin_src bash
+ansible-vault -h
 #+end_src
 
 ** TODO Ansible todo list

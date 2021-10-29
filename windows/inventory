@@ -4,7 +4,18 @@ vx2 ansible_host=10.255.6.52
 vx3 ansible_host=10.255.6.53
 vx4 ansible_host=10.255.6.54
 vx5 ansible_host=10.255.6.55
+vx6 ansible_host=10.255.6.56
 
 [sql]
 VXACCPAC2 ansible_host=10.255.4.20
 VXACCPAC3 ansible_host=10.255.4.30
+
+[granite]
+granite_us ansible_host=172.16.1.81
+granite_mx ansible_host=172.16.1.91
+granite_sp ansible_host=172.16.1.101
+granite_dr ansible_host=172.16.1.122
+
+[doclink]
+doclink_db ansible_host=10.255.6.58
+doclink_app ansible_host=10.255.6.57

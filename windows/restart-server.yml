@@ -1,0 +1,15 @@
+---
+- hosts: '{{target}}'
+  vars_files:
+    - "group_vars/main.yml"
+
+  tasks:
+    - name: Warn logged in users of reboot
+      win_msg:
+        display_seconds: 60
+        msg: Please save your work we will retsart the server in about 60 seconds
+        wait: true
+
+    - name: Restarting {{target}} server
+      win_reboot:
+        reboot_timeout: 600
