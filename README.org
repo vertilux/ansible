@@ -215,7 +215,7 @@ ansible-playbook maintenance-mode-all.yml -K -i inventory.yml
 *** Append Env Variable
 Environment variables are a set of dynamic named values, stored within the system that are used by applications launched. In simple words, an environment variable is a variable with a name and an associated value.
 
-**** Persisten Env Variables
+**** Persistent Env Variables
 To make Environment variables persistent you need to define those variables in the bash configuration files. In most Linux distributions when you start a new session, environment variables are read from the following files:
 
 - =/etc/environment=: Use this file to set up system-wide environment variables. Variables in this file are set in the following format:
@@ -259,3 +259,109 @@ Entry point is the =main= playbook, this is going to ask for:
 
 ** Tower
 A collections of playbooks to perform tasks with the tower web interface.
+** Windows Management
+Ansible Windows module uses winrm connection, in order to execute commands in the Windows machine.
+
+*** Why Automate Windows Hosts?
+A few of the many things you can do for your Windows hosts with Ansible.Windows include:
++ Starting, stopping and managing services
++ Pushing & executing custom PowerShell scripts
++ Reboot multiples machines simultaneously
+
+For a complete list of Ansible.Windows modules visit this [[https://docs.ansible.com/ansible/latest/collections/ansible/windows/index.html][link]].
+
+*** What’s Required?
+First, the control machine (where Ansible will be executing your Windows modules from) needs to run Linux. Second, Windows support has been evolving rapidly, so make sure to use the newest possible version of Ansible to get the latest features!
+
+For the target hosts, you should be running at least Windows 7 SP1 or later or Windows Server 2008 SP1 or later.
+
+Lastly, since Ansible connects to Windows machines and runs PowerShell scripts by using Windows Remote Management (WinRM) (as an alternative to SSH for Linux/Unix machines), make WinRM is activated.
+
+*** Trobleshooting WinRM
+Sometimes we get an error ~plaintext: the specified credentials were rejected by the server~ and the reason it’s not the credentials as I know they are correct. It must be some other authentication issue.
+
+The problem is that it is sending credentials in plaintext over the unencrypted WinRM port 5985. The fix is a couple of WinRM configuration changes in the Windows servers. In an elevated command prompt type the following commands:
+
+**** Sets WinRM to Basic Authentication
+#+begin_src PowerShell
+winrm set winrm/config/service/auth '@{Basic="true"}'
+#+end_src
+
+#+begin_example
+Auth
+    Basic = true
+    Kerberos = true
+    Negotiate = true
+    Certificate = false
+    CredSSP = false
+    CbtHardeningLevel = Relaxed
+#+end_example
+
+**** Sets WinRM to allows unencrypted traffic
+#+begin_src PowerShell
+winrm set winrm/config/service '@{AllowUnencrypted="true"}'
+#+end_src
+
+#+begin_example
+Service
+    RootSDDL = O:NSG:BAD:P(A;;GA;;;BA)(A;;GR;;;IU)S:P(AU;FA;GA;;;WD)(AU;SA;GXGW;;;WD)
+    MaxConcurrentOperations = 4294967295
+    MaxConcurrentOperationsPerUser = 1500
+    EnumerationTimeoutms = 240000
+    MaxConnections = 300
+    MaxPacketRetrievalTimeSeconds = 120
+    AllowUnencrypted = true
+    Auth
+        Basic = true
+        Kerberos = true
+        Negotiate = true
+        Certificate = false
+        CredSSP = false
+        CbtHardeningLevel = Relaxed
+    DefaultPorts
+        HTTP = 5985
+        HTTPS = 5986
+    IPv4Filter = *
+    IPv6Filter = *
+    EnableCompatibilityHttpListener = false
+    EnableCompatibilityHttpsListener = false
+    CertificateThumbprint
+    AllowRemoteAccess = true
+#+end_example
+
+**** Aditional Issues
+Because WinRM can be configured in so many different ways, errors that seem Ansible related can actually be due to problems with host setup instead.\\
+Some examples of WinRM errors that you might see include:
+
++ HTTP 401 error
++ HTTP 500 error
++ Timeout issues
++ Connection refusal.
+
+Visit the [[https://docs.ansible.com/ansible/devel/user_guide/windows_setup.html?extIdCarryOver=true&sc_cid=7013a000002pemAAAQ#common-winrm-issues][Common WinRM Issues]] section of our Ansible.Windows Setup documentation page.
+
+*** Install pywinrm
+
+~pywinrm~ dependencies aren’t shipped by default with Ansible, make sure you install the ~pywinrm~ library on the machine that Ansible is installed on. The simplest method is to run:
+
+#+begin_src bash
+pip install pywinrm
+#+end_src
+
+*** References
++ [[https://www.ansible.com/blog][The Inside Playbook]]
++ [[https://docs.ansible.com/ansible/devel/user_guide/windows_setup.html][Ansible Documentation]]
+
+*** Playbooks
+**** Restart Granite
+This playbbok wil use ~win_service~ – Manage and query Windows services to restart a chosen Granite service. For beter UX select an =application (country or distribution center)= from the prompt menu.
+
+#+begin_src bash
+ansible-playbook restart-granite-services.yml -i inventor
+#+end_src
+
+** TODO Ansible todo list
++ [ ] Create a bash script to group and execute playbooks
++ [ ] Extend windows module
++ [ ] Refector ERP playbooks
++ [ ] Separate ERP playbooks from non-ERP

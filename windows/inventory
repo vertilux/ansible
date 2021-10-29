@@ -1,0 +1,10 @@
+[rdp]
+vx1 ansible_host=10.255.6.51
+vx2 ansible_host=10.255.6.52
+vx3 ansible_host=10.255.6.53
+vx4 ansible_host=10.255.6.54
+vx5 ansible_host=10.255.6.55
+
+[sql]
+VXACCPAC2 ansible_host=10.255.4.20
+VXACCPAC3 ansible_host=10.255.4.30

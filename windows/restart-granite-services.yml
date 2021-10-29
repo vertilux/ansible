@@ -1,0 +1,27 @@
+---
+- hosts: vx2
+
+  vars_prompt:
+  - name: service
+    prompt: |
+      Which Granite do you want to restart?
+      1- USA
+      2- Mexico
+      3- Spain
+      4- Dominicana
+    private: no
+
+  tasks:
+    - set_fact: app=USA
+      when: ( service == "1" )
+    - set_fact: app=Mexico
+      when: ( service == "2" )
+    - set_fact: app=Spain
+      when: ( service == "3" )
+    - set_fact: app=Dominicana
+      when: ( service == "4" )
+
+    - name: Restarting {{app}} Granite Service
+      win_service:
+        name: GraniteIntegrationNew{{app}}
+        state: restarted
