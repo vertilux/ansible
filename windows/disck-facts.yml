@@ -1,0 +1,29 @@
+---
+- hosts: '{{target}}'
+  vars_files:
+    - "group_vars/main.yml"
+
+  tasks:
+    - name: Get disk facts
+      win_disk_facts:
+
+    - name: Output first disk size
+      debug:
+        var: ansible_facts.disks[0].size
+
+    - name: Convert first system disk into various formats
+      debug:
+        msg: '{{ disksize_gib_human }}'
+      vars:
+        # Get first system disk
+        disk: '{{ ansible_facts.disks|selectattr("system_disk")|first }}'
+
+        # Show disk size in Gibibytes
+        disksize_gib_human: '{{ disk.size|filesizeformat(true) }}'
+
+        # Show disk size in Gigabytes
+        disksize_gb_human: '{{ disk.size|filesizeformat }}'
+
+    - name: Output second disk serial number
+      debug:
+        var: ansible_facts.disks[1].serial_number

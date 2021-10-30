@@ -1,0 +1,23 @@
+---
+- hosts: '{{target}}'
+  vars_files:
+    - "group_vars/main.yml"
+
+  vars_prompt:
+  - name: service
+    prompt: |
+      Which service do you want to restart?
+      1- MSSQLSERVER
+      2- SQLSERVERAGENT
+    private: no
+
+  tasks:
+    - set_fact: name=MSSQLSERVER
+      when: ( service == "1" )
+    - set_fact: name=SQLSERVERAGENT
+      when: ( service == "2" )
+
+    - name: Restarting {{name}} Service
+      win_service:
+        name: {{name}}
+        state: restarted

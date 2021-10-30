@@ -362,11 +362,19 @@ pip install pywinrm
 + [[https://docs.ansible.com/ansible/devel/user_guide/windows_setup.html][Ansible Documentation]]
 
 ** Playbooks
-*** Restart Granite
-This playbook wil use ~win_service~ – Manage and query Windows services to restart a chosen Granite service. For beter UX select an =application (country or distribution center)= from the prompt menu.
+*** Restart Services
+This playbook wil use ~win_service~ – Manage and query Windows services to restart a chosen service. For beter UX select an =application (country or distribution center) or SQL Service= from the prompt menu.
+
+**** Granite
+#+begin_src bash
+ansible-playbook restart-granite-services.yml -i inventory --ask-vault_pass
+#+end_src
+
+**** SQL Service
+Make sure to properly set =target= machine.
 
 #+begin_src bash
-ansible-playbook restart-granite-services.yml -i inventory --vault-password-file group_vars/vault_pass.txt
+ansible-playbook restart-sql-service.yml -i inventory --extra-vars="target=VXACCPAC2" --ask-vault_pass
 #+end_src
 
 *** Restart Machine
@@ -385,7 +393,14 @@ ansible-playbook restart-server.yml --extra-vars="target=granite_dr" --ask-vault
 ansible-playbook restart-server.yml --extra-vars="target=granite" --ask-vault-pass -i inventory
 #+end_src
 
-*Listing hosts:*
+*** Get Disk Info
+Retrieve and output detailed information about the attached disks of the target and its volumes and partitions if existent.
+
+#+begin_src bash
+ansible-playbook disck-facts.yml --extra-vars="target=granite" --ask-vault-pass -i inventory
+#+end_src
+
+*** Listing hosts
 
 If you want to list all available hosts in the inventory, run:
 #+begin_src bash
@@ -396,6 +411,7 @@ If you want to list that match a pattern you can use =list-hosts.yml= playbook a
 #+begin_src bash
 ansible-playbook list-hosts.yml -i inventory --list-hosts --extra-vars="target=granite"
 #+end_src
+
 
 * Secure sensitive data
 Use Ansible vault to protect sensitive data witin playbooks and roles. Ansible Vault performs various operations. Specifically, it can:
@@ -448,5 +464,6 @@ ansible-vault -h
 * TODO Ansible todo list
 + [ ] Create a bash script to group and execute playbooks
 + [ ] Extend windows module
-+ [ ] Refector ERP playbooks
-+ [ ] Separate ERP playbooks from non-ERP
+* DONE TODO
++ [x] Refector ERP playbooks
++ [x] Separate ERP playbooks from non-ERP
