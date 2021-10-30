@@ -1,6 +1,7 @@
 ---
 - hosts: qnap
-  remote_user: admin
+  vars_files:
+    - "group_vars/main.yml"
 
   tasks:
     - name: Finding files older than 3 days

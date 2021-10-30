@@ -6,6 +6,3 @@ lb04 ansible_host=134.209.34.40 ansible_user=deploy
 
 [db]
 postgres ansible_host=104.236.33.109 ansible_user=deploy
-
-[qnap]
-qnap ansible_host=10.255.3.100 ansible_user=admin ansible_python_interpreter=/share/CACHEDEV1_DATA/.qpkg/Python3/python3/bin/python3

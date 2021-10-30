@@ -8,13 +8,13 @@
 
 This repository is a collection of ansible playbooks implemented by Vertilux's IT dept to perform some server automations.
 
-** Getting Started
+* Getting Started
 Make sure ansible is installed on your machin, to install ansible:
 
-*** Install ansible on Mac
+** Install ansible on Mac
   ~brew install ansible~
 
-*** Install ansible on Windows
+** Install ansible on Windows
 Probably the best option is to installed Ubuntu on WSL (Windows Subsytem for Linux).
   + Search for Windows features in the search box. And when the “Turn Windows features on or off ” appears, click on that.
   + A window will open with a bunch of features. Scroll down and check the box of Windows Subsystem for the Linux option. And after that, click on the OK button.
@@ -33,7 +33,7 @@ sudo apt-get update
 sudo apt-get install ansible
 #+end_src
 
-*** Clone the repository.
+** Clone the repository.
 
 #+begin_src bash
 git clone git@github.com:vertilux/ansible.git
@@ -41,8 +41,9 @@ git clone git@github.com:vertilux/ansible.git
 
 Then cd into the ansible directory: $ ~cd  ansible~
 
+* ERP
 ** Deploy
-This playbook contains multiples roles to deploy new versions or updates to production.
+This playbook contains multiples roles to deploy new versions or ERP updates to production.
 
 [[file:infrastructure-diagram.png]]
 
@@ -81,7 +82,7 @@ ansible-playbook entry_point.yml -i inventory
 #+TBLFM:
 
 ** Playbooks
-A collections o simple playbooks to perform different tasks.
+A collections o simple playbooks to perform different tasks for the ERP Web Application.
 
 *** Ping
 Try to connect to host, verify a usable python and return ~pong~ on success.
@@ -237,7 +238,7 @@ ansible-playbook append-env-variable.yml -K -i inventory.yml
 
 #+RESULTS:
 
-** Provision ERP
+** Provision
 Provision ERP is a collection of ansibles roles to make easy the setup of multiples environments. Every environemnt is a distribution center, this approach makes us use the same code for all distribution centers and easy to maintain.
 
 *** Running playbooks
@@ -257,12 +258,20 @@ Entry point is the =main= playbook, this is going to ask for:
 - set-sidekiq-service
 - logrotate
 
-** Tower
+* Tower
 A collections of playbooks to perform tasks with the tower web interface.
-** Windows Management
+* QNAP
+Usefull playbook collection to perform tasks on the QNAP NAS.
+
+** Remove old SQL backups
+#+begin_src bash
+ansible-playbook remove-old-sql-backups.yml -i
+#+end_src
+
+* Windows Management
 Ansible Windows module uses winrm connection, in order to execute commands in the Windows machine.
 
-*** Why Automate Windows Hosts?
+** Why Automate Windows Hosts?
 A few of the many things you can do for your Windows hosts with Ansible.Windows include:
 + Starting, stopping and managing services
 + Pushing & executing custom PowerShell scripts
@@ -270,19 +279,19 @@ A few of the many things you can do for your Windows hosts with Ansible.Windows 
 
 For a complete list of Ansible.Windows modules visit this [[https://docs.ansible.com/ansible/latest/collections/ansible/windows/index.html][link]].
 
-*** What’s Required?
+** What’s Required?
 First, the control machine (where Ansible will be executing your Windows modules from) needs to run Linux. Second, Windows support has been evolving rapidly, so make sure to use the newest possible version of Ansible to get the latest features!
 
 For the target hosts, you should be running at least Windows 7 SP1 or later or Windows Server 2008 SP1 or later.
 
 Lastly, since Ansible connects to Windows machines and runs PowerShell scripts by using Windows Remote Management (WinRM) (as an alternative to SSH for Linux/Unix machines), make WinRM is activated.
 
-*** Trobleshooting WinRM
+** Trobleshooting WinRM
 Sometimes we get an error ~plaintext: the specified credentials were rejected by the server~ and the reason it’s not the credentials as I know they are correct. It must be some other authentication issue.
 
 The problem is that it is sending credentials in plaintext over the unencrypted WinRM port 5985. The fix is a couple of WinRM configuration changes in the Windows servers. In an elevated command prompt type the following commands:
 
-**** Sets WinRM to Basic Authentication
+*** Sets WinRM to Basic Authentication
 #+begin_src PowerShell
 winrm set winrm/config/service/auth '@{Basic="true"}'
 #+end_src
@@ -297,7 +306,7 @@ Auth
     CbtHardeningLevel = Relaxed
 #+end_example
 
-**** Sets WinRM to allows unencrypted traffic
+*** Sets WinRM to allows unencrypted traffic
 #+begin_src PowerShell
 winrm set winrm/config/service '@{AllowUnencrypted="true"}'
 #+end_src
@@ -329,7 +338,7 @@ Service
     AllowRemoteAccess = true
 #+end_example
 
-**** Aditional Issues
+*** Aditional Issues
 Because WinRM can be configured in so many different ways, errors that seem Ansible related can actually be due to problems with host setup instead.\\
 Some examples of WinRM errors that you might see include:
 
@@ -340,7 +349,7 @@ Some examples of WinRM errors that you might see include:
 
 Visit the [[https://docs.ansible.com/ansible/devel/user_guide/windows_setup.html?extIdCarryOver=true&sc_cid=7013a000002pemAAAQ#common-winrm-issues][Common WinRM Issues]] section of our Ansible.Windows Setup documentation page.
 
-*** Install pywinrm
+** Install pywinrm
 
 ~pywinrm~ dependencies aren’t shipped by default with Ansible, make sure you install the ~pywinrm~ library on the machine that Ansible is installed on. The simplest method is to run:
 
@@ -348,19 +357,19 @@ Visit the [[https://docs.ansible.com/ansible/devel/user_guide/windows_setup.html
 pip install pywinrm
 #+end_src
 
-*** References
+** References
 + [[https://www.ansible.com/blog][The Inside Playbook]]
 + [[https://docs.ansible.com/ansible/devel/user_guide/windows_setup.html][Ansible Documentation]]
 
-*** Playbooks
-**** Restart Granite
-This playbbok wil use ~win_service~ – Manage and query Windows services to restart a chosen Granite service. For beter UX select an =application (country or distribution center)= from the prompt menu.
+** Playbooks
+*** Restart Granite
+This playbook wil use ~win_service~ – Manage and query Windows services to restart a chosen Granite service. For beter UX select an =application (country or distribution center)= from the prompt menu.
 
 #+begin_src bash
 ansible-playbook restart-granite-services.yml -i inventory --vault-password-file group_vars/vault_pass.txt
 #+end_src
 
-**** Restart Machine
+*** Restart Machine
 Reboot a Windows machine, wait for it to go down, come back up, and respond to commands. In order to safely limiting to run this playbook on a single machine we using =--extra-vars= to especify the host.
 
 Running the playbook:\\
@@ -368,19 +377,19 @@ If =target= isn't defined, the playbook does nothing. A group from the hosts fil
 
  *Playbook targeting a single host:*
 #+begin_src bash
-ansible-playbook restart-server.yml --extra-vars="target=granite_dr" --vault-password-file group_vars/vault_pass.txt -i inventory
+ansible-playbook restart-server.yml --extra-vars="target=granite_dr" --ask-vault-pass -i inventory
 #+end_src
 
 *Playbook with a group of hosts:*
 #+begin_src bash
-ansible-playbook restart-server.yml --extra-vars="target=granite" --vault-password-file group_vars/vault_pass.txt -i inventory
+ansible-playbook restart-server.yml --extra-vars="target=granite" --ask-vault-pass -i inventory
 #+end_src
 
 *Listing hosts:*
 
 If you want to list all available hosts in the inventory, run:
 #+begin_src bash
-ansible all --list-hosts
+ansible all --list-hosts -i inventory
 #+end_src
 
 If you want to list that match a pattern you can use =list-hosts.yml= playbook and pass the option =--list-hosts=.
@@ -388,14 +397,14 @@ If you want to list that match a pattern you can use =list-hosts.yml= playbook a
 ansible-playbook list-hosts.yml -i inventory --list-hosts --extra-vars="target=granite"
 #+end_src
 
-** Secure sensitive data
+* Secure sensitive data
 Use Ansible vault to protect sensitive data witin playbooks and roles. Ansible Vault performs various operations. Specifically, it can:
 + Encrypt a file
 + Decrypt a file
 + View an encrypted file without breaking the encryption
 + Edit an encrypted file
 
-*** Create an encrypted file
+** Create an encrypted file
 The =ansible-vault create= command is used to create the encrypted file.
 
 #+begin_src bash
@@ -412,31 +421,31 @@ $ANSIBLE_VAULT;1.1;AES256
 6335
 #+end_example
 
-*** Editing the encrypted file
+** Editing the encrypted file
 If the file is encrypted and changes are required, use the =edit= command.
 
 #+begin_src bash
 ansible-vault create vault.yml
 #+end_src
 
-*** Decrypting a file
+** Decrypting a file
 The =ansible-vault decrypt= command is used to decrypt the encrypted file.
 
 #+begin_src bash
 ansible-vault decrypt vault.yml
 #+end_src
 
-*** Reset the file password
+** Reset the file password
 Use the =ansible-vault rekey= command to reset the encrypted file password.
 
-*** Help
+** Help
 Other ansible-vault commands available are seen via:
 
 #+begin_src bash
 ansible-vault -h
 #+end_src
 
-** TODO Ansible todo list
+* TODO Ansible todo list
 + [ ] Create a bash script to group and execute playbooks
 + [ ] Extend windows module
 + [ ] Refector ERP playbooks
