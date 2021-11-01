@@ -464,6 +464,6 @@ ansible-vault -h
 * TODO Ansible todo list
 + [ ] Create a bash script to group and execute playbooks
 + [ ] Extend windows module
-* DONE TODO
+* DONE Todo's complete
 + [x] Refector ERP playbooks
 + [x] Separate ERP playbooks from non-ERP

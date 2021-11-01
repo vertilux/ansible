@@ -19,5 +19,5 @@
 
     - name: Restarting {{name}} Service
       win_service:
-        name: {{name}}
+        name: "{{name}}"
         state: restarted
