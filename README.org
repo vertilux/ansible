@@ -461,9 +461,49 @@ Other ansible-vault commands available are seen via:
 ansible-vault -h
 #+end_src
 
+* Wrapper script
+Bash wrapper script to simplefy playbooks execution.
+
+** Usage
+*** Help
+Dislpay list of options and arguments:
+#+begin_src bash
+./acli -h
+#+end_src
+
+*** Restart a server (host)
+=win_reboot= – Reboot a windows machine.
+#+begin_src bash
+./acli -r
+#+end_src
+
+*** Disk facts
+=win_disk_facts= – Show the attached disks and disk information of the target host.
+
+*If you dont know the host or group run the command without passing any argument.*
+#+begin_src bash
+./acli -d
+#+end_src
+
+*If you know the host or group you can pass it as an argument.*
+#+begin_src bash
+./acli -d granite
+#+end_src
+
+*** List hosts
+List all hosts listed in the windows inventory.
+#+begin_src bash
+./acli -l
+#+end_src
+
+*If yor want to list only hosts that belogns to an specific group, pass the group as an argument.*
+#+begin_src bash
+./acli -l granite
+#+end_src
+
+
 * TODO Ansible todo list
-+ [ ] Create a bash script to group and execute playbooks
 + [ ] Extend windows module
-* DONE Todo's complete
++ [x] Create a bash script to group and execute playbooks
 + [x] Refector ERP playbooks
 + [x] Separate ERP playbooks from non-ERP

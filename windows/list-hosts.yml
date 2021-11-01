@@ -1,3 +1,2 @@
 ---
 - hosts: '{{ target }}'
-#ansible-playbook list-hosts.yml -i inventory --list-hosts --extra-vars="target=granite"

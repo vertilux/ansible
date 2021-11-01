@@ -1,0 +1,110 @@
+#!/usr/bin/bash
+#__     _______ ____ _____ ___ _    _   ___  __
+#\ \   / / ____|  _ \_   _|_ _| |  | | | \ \/ /
+# \ \ / /|  _| | |_) || |  | || |  | | | |\  /
+#  \ V / | |___|  _ < | |  | || |__| |_| |/  \
+#   \_/  |_____|_| \_\|_| |___|_____\___//_/\_\
+#
+# Vertilux Ltd.
+# https://vertilux.com
+# https://github.com/vertilux
+# Description: Simple bash script wrapper to ineteract with ansible.
+
+package="acli"
+COLUMNS=12
+
+while test $# -gt 0; do
+  case "$1" in
+    -h|--help)
+      echo "$package - Ansible CLI wrapper"
+      echo " "
+      echo "$package [options] [arguments]"
+      echo " "
+      echo "$(tput setaf 1)Instructions for Windows Playbooks"
+      echo "$(tput setaf 2)options:$(tput setaf 7)"
+      echo "-r, --restart-host     Restart host of group of hosts."
+      echo "-d, --disk-space       Display total disck size."
+      echo "   If you know the host you can pass it as an argument."
+      echo "   Or simply run it as: ./acli -d, this will promt the iventory."
+      echo "-l, --list-hosts       List inventory hosts."
+      echo "   If you know the host group you can pass it as an argument."
+      echo "   Or run it as ./acli -l to list all available hosts."
+      exit 0
+      ;;
+
+    ###########################
+    ###   Windows Modules   ###
+    ###########################
+
+    # Restart Servers
+    -r|--restart-host)
+      shift
+      if test $# -gt 0; then
+          echo "No need to pass any arguments with this option."
+          echo "Please try: ./acli -r"
+      else
+        hosts=`awk '{print $1}' windows/inventory`
+        PS3='Select host or group: '
+        select host in $hosts; do
+          play=$( ansible-playbook windows/restart-server.yml --extra-vars="target=$host" --ask-vault-pass -i windows/inventory )
+          output=$(echo "$play" -1)
+          echo $play
+          break
+        done
+      fi
+      shift
+      ;;
+
+    # Display disk size
+    -d|--disk-facts)
+      shift
+      if test $# -gt 0; then
+        play=$( ansible-playbook windows/disck-facts.yml --extra-vars="target=$1" --ask-vault-pass -i windows/inventory )
+        msg=$(echo "$play" | awk 'gsub(/"msg"/,x)')
+        recap=$(echo "$play" | grep "ok=")
+        echo "Disk size $msg"
+        echo "$recap"
+      else
+        hosts=`awk '{print $1}' windows/inventory`
+        PS3='Select host or group: '
+        select host in $hosts; do
+          play=$( ansible-playbook windows/disck-facts.yml --extra-vars="target=$host" --ask-vault-pass -i windows/inventory )
+          msg=$(echo "$play" | awk 'gsub(/"msg"/,x)')
+          recap=$(echo "$play" | grep "ok=")
+          echo "Disk size $msg"
+          echo "$recap"
+          break
+        done
+      fi
+      shift
+      ;;
+
+    # List host in ansible inventory for windows module
+    -l|--list-hosts)
+      shift
+      if test $# -gt 0; then
+        counter=0
+        play=$( ansible-playbook windows/list-hosts.yml -i windows/inventory --list-hosts --extra-vars="target=$1" )
+        hosts=$(echo $play | cut -f13- -d' ' )
+        for h in $hosts; do
+          echo $h
+          counter=$((counter+1))
+        done
+        echo "$(tput setaf 2)Total hosts: $(tput bold)($counter)"
+      else
+        counter=0
+        play=$( ansible all --list-hosts -i windows/inventory | sed 's/.*\(:.*\)/\1/g' | sed 's|[:,]||g' )
+        for h in $play; do
+          echo $h
+          counter=$((counter+1))
+        done
+        echo "$(tput setaf 2)Total hosts: $(tput bold)($counter)"
+      fi
+      shift
+    ;;
+
+    *)
+      break
+    ;;
+  esac
+done
