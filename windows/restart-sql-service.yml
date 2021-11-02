@@ -3,21 +3,23 @@
   vars_files:
     - "group_vars/main.yml"
 
-  vars_prompt:
-  - name: service
-    prompt: |
-      Which service do you want to restart?
-      1- MSSQLSERVER
-      2- SQLSERVERAGENT
-    private: no
+  pre_tasks:
+    - pause:
+        prompt: |
+          Which service do you want to restart?
+          1- MSSQLSERVER
+          2- SQLSERVERAGENT
+      when: service is not defined
+      register: prompt
+
+    - name: Selected {{prompt.user_input}} for prompt
+      set_fact:
+        service: MSSQLSERVER
+      when: service is not defined and prompt.user_input == "1"
 
   tasks:
-    - set_fact: name=MSSQLSERVER
-      when: ( service == "1" )
-    - set_fact: name=SQLSERVERAGENT
-      when: ( service == "2" )
-
-    - name: Restarting {{name}} Service
+    - name: Restarting {{service}} Service
       win_service:
-        name: "{{name}}"
+        name: "{{service}}"
         state: restarted
+      when: service is defined

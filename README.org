@@ -464,17 +464,60 @@ ansible-vault -h
 * Wrapper script
 Bash wrapper script to simplefy playbooks execution.
 
-** Usage
-*** Help
+** Help
 Dislpay list of options and arguments:
 #+begin_src bash
 ./acli -h
 #+end_src
 
+Help examples:
+#+begin_example
+__     _______ ____ _____ ___ _    _   ___  __
+\ \   / / ____|  _ \_   _|_ _| |  | | | \ \/ /
+ \ \ / /|  _| | |_) || |  | || |  | | | |\  /
+  \ V / | |___|  _ < | |  | || |__| |_| |/  \
+   \_/  |_____|_| \_\|_| |___|_____\___//_/\_\
+
+acli - Ansible CLI wrapper writen in bash.
+
+acli [options] [arguments]
+
+Instructions for Windows Playbooks
+options:
+-r, --reboot-host       Restart host of group of hosts.
+-d, --disk-space        Display total disck size.
+    If you know the host you can pass it as an argument.
+    Or simply run it as: ./acli -d, this will promt the iventory.
+-l, --list-hosts        List inventory hosts.
+    If you know the host group you can pass it as an argument.
+    Or run it as ./acli -l to list all available hosts.
+-p, --ping              Ping windows servers
+-s, --restart-sql       Restart SQL service.
+    Make sure pass the required arguments: host name and service.
+
+Instructions for QNAP NAS
+options:
+--del                   Delete old backups (older than 3 days).
+#+end_example
+
+
+** Windows Modules
 *** Restart a server (host)
 =win_reboot= – Reboot a windows machine.
 #+begin_src bash
 ./acli -r
+#+end_src
+
+*** Restart SQL Service
+=win_service= – Manage and query Windows services
+
+| Arguments | Description                   |
+|-----------+-------------------------------|
+| target    | Machine name, Ex: VXACCPAC2   |
+| service   | Service name, Ex: MSSQLSERVER |
+
+#+begin_src bash
+./acli -s <target> <service>
 #+end_src
 
 *** Disk facts
@@ -499,6 +542,13 @@ List all hosts listed in the windows inventory.
 *If yor want to list only hosts that belogns to an specific group, pass the group as an argument.*
 #+begin_src bash
 ./acli -l granite
+#+end_src
+** QNAP
+We use QNAP as our main Network-attached storage (NAS).
+
+*** Remove old SQL Backups
+#+begin_src bash
+./acli --del
 #+end_src
 
 

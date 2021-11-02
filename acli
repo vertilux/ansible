@@ -16,19 +16,32 @@ COLUMNS=12
 while test $# -gt 0; do
   case "$1" in
     -h|--help)
-      echo "$package - Ansible CLI wrapper"
+      echo "__     _______ ____ _____ ___ _    _   ___  __ "
+      echo "\ \   / / ____|  _ \_   _|_ _| |  | | | \ \/ / "
+      echo " \ \ / /|  _| | |_) || |  | || |  | | | |\  /  "
+      echo "  \ V / | |___|  _ < | |  | || |__| |_| |/  \  "
+      echo "   \_/  |_____|_| \_\|_| |___|_____\___//_/\_\ "
+      echo " "
+      echo "$package - Ansible CLI wrapper writen in bash."
       echo " "
       echo "$package [options] [arguments]"
       echo " "
       echo "$(tput setaf 1)Instructions for Windows Playbooks"
       echo "$(tput setaf 2)options:$(tput setaf 7)"
-      echo "-r, --restart-host     Restart host of group of hosts."
-      echo "-d, --disk-space       Display total disck size."
-      echo "   If you know the host you can pass it as an argument."
-      echo "   Or simply run it as: ./acli -d, this will promt the iventory."
-      echo "-l, --list-hosts       List inventory hosts."
-      echo "   If you know the host group you can pass it as an argument."
-      echo "   Or run it as ./acli -l to list all available hosts."
+      echo "-r, --reboot-host       Restart host of group of hosts."
+      echo "-d, --disk-space        Display total disck size."
+      echo "    If you know the host you can pass it as an argument."
+      echo "    Or simply run it as: ./acli -d, this will promt the iventory."
+      echo "-l, --list-hosts        List inventory hosts."
+      echo "    If you know the host group you can pass it as an argument."
+      echo "    Or run it as ./acli -l to list all available hosts."
+      echo "-p, --ping              Ping windows servers"
+      echo "-s, --restart-sql       Restart SQL service."
+      echo "    Make sure pass the required arguments: host name and service."
+      echo " "
+      echo "$(tput setaf 1)Instructions for QNAP NAS"
+      echo "$(tput setaf 2)options:$(tput setaf 7)"
+      echo "--del                   Delete old backups (older than 3 days)."
       exit 0
       ;;
 
@@ -37,7 +50,7 @@ while test $# -gt 0; do
     ###########################
 
     # Restart Servers
-    -r|--restart-host)
+    -r|--reboot-host)
       shift
       if test $# -gt 0; then
           echo "No need to pass any arguments with this option."
@@ -101,7 +114,56 @@ while test $# -gt 0; do
         echo "$(tput setaf 2)Total hosts: $(tput bold)($counter)"
       fi
       shift
-    ;;
+      ;;
+
+    # Ping all inventory
+    -p|--ping)
+      shift
+      if test $# -gt 0; then
+          echo "No need to pass any arguments with this option."
+          echo "Please try: ./acli -p"
+      else
+        play=$( ansible-playbook windows/ping.yml -i windows/inventory --ask-vault-pass )
+        recap=$(echo "$play" | grep "ok=" | awk '{print $1, $3, $5}')
+        echo $recap
+      fi
+      shift
+      ;;
+
+    # Restart SQL Services (MSSQLSERVER or SQLSERVERAGENT)
+    -s|--restart-sql)
+      shift
+      if test $# -gt 1; then
+        play=$( ansible-playbook windows/restart-sql-service.yml -i windows/inventory --extra-vars="target=$1 service=$2" --ask-vault-pass )
+        error=$(echo "$play" | grep "fatal")
+        recap=$(echo "$play" | grep "ok=" | awk '{print $1, $3, $6}')
+        echo "$(tput setaf 1) $error"
+        echo "$(tput setaf 7) $recap"
+      else
+        echo "Wrong number of arguments, Example: ./acli -s VXACCPAC2 MSSQLSERVER"
+      fi
+      shift
+      ;;
+
+
+    ###########################
+    ###        QNAP         ###
+    ###########################
+
+    # Remove backups files older than 3 days.
+    --del)
+      shift
+        play=$( ansible-playbook qnap/remove-old-sql-backups.yml -i qnap/inventory --ask-vault-pass )
+        error=$(echo "$play" | grep "fatal")
+        recap=$(echo "$play" | grep "ok=" | awk '{print $1, $3, $6}')
+        if [ -z "$error" ]; then
+           echo "$(tput setaf 1) $error"
+           echo "$(tput setaf 7) $recap"
+        else
+           echo "$(tput setaf 7) $recap"
+        fi
+      shift
+      ;;
 
     *)
       break
