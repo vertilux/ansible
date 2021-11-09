@@ -1,5 +1,5 @@
 ---
-- hosts: web-servers
+- hosts: web_servers
   remote_user: deploy
 
   vars_prompt:
@@ -9,7 +9,7 @@
 
   tasks:
   - stat:
-      path: /home/deploy/vertilux-{{env}}/current/tmp/maintenance.yml
+      path: /home/deploy/erp-{{env}}/current/tmp/maintenance.yml
     register: result
 
   - block:
