@@ -2,13 +2,25 @@
 - hosts: web_servers
   become: yes
 
-  vars_prompt:
-    - name: env
-      prompt: "Enter environment"
-      private: no
+  pre_tasks:
+    - pause:
+        prompt: |
+          Select env variable:
+          1- accltd
+          2- mxpdat
+          3- espdat
+          4- rdmdat
+      when: env is not defined
+      register: prompt
+
+    - name: Restart queue processing job
+      set_fact:
+        env: accltd
+      when: env is not defined
 
   tasks:
     - name: Restart queue processing job Sidekiq
       service:
-        name: sidekiq-{{env}}
+        name: "sidekiq-{{env}}"
         state: restarted
+      when: env is defined

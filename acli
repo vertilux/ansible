@@ -1,4 +1,4 @@
-#!/usr/bin/bash
+#!/bin/bash
 #__     _______ ____ _____ ___ _    _   ___  __
 #\ \   / / ____|  _ \_   _|_ _| |  | | | \ \/ /
 # \ \ / /|  _| | |_) || |  | || |  | | | |\  /
@@ -42,6 +42,10 @@ while test $# -gt 0; do
       echo "$(tput setaf 1)Instructions for QNAP NAS"
       echo "$(tput setaf 2)options:$(tput setaf 7)"
       echo "--del                   Delete old backups (older than 3 days)."
+      echo " "
+      echo "$(tput setaf 1)Instructions for ERP Web Application"
+      echo "$(tput setaf 2)options: $(tput setaf 4)erp$(tput setaf 7)"
+      echo "--restart-sidekiq       Restart sidekiq queue processing job."
       exit 0
       ;;
 
@@ -165,8 +169,41 @@ while test $# -gt 0; do
       shift
       ;;
 
+
+    ###########################
+    ###        ERP         ###
+    ###########################
+
+    erp)
+      shift
+      if test $# -gt 0; then
+        case "$1" in
+          # Restart sidekiq service
+          --restart-sidekiq)
+            shift
+              PS3='Select env: '
+              envs=(accltd mxpdat)
+              select env in "${envs[@]}"; do
+                play=$( ansible-playbook erp/playbooks/restart-sidekiq.yml -K -i erp/playbooks/inventory --extra-vars="env=$env" )
+                error=$(echo "$play" | grep "fatal")
+                recap=$(echo "$play" | grep "ok=" | awk '{print $1, $3, $4, $6}')
+                if [ -z "$error" ]; then
+                  echo "$(tput setaf 1) $error"
+                  echo "$(tput setaf 7) $recap"
+                else
+                  echo "$(tput setaf 7) $recap"
+                fi
+              done
+            shift
+          ;;
+        esac
+      else
+          echo "Wrong number of arguments"
+      fi
+      shift
+      ;;
     *)
-      break
+    break
     ;;
   esac
 done
