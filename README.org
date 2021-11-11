@@ -551,6 +551,16 @@ We use QNAP as our main Network-attached storage (NAS).
 ./acli --del
 #+end_src
 
+** ERP Web App
+Vertilux ERP (Enterprise Resource Planning) is a web base application developed to facilitate our customers, vendors and employees information flow between all business functions. Our ERP provides an integrated and continuously updated view of core business processes.
+
+*** Restart Sidekiq
+We use Sidekiq as background job processing for our applications.
+Sidekiq uses threads to handle many jobs at the same time in the same process. It is integrated tightly with Rails to make background processing dead simple.
+
+#+begin_src bash
+./acli erp --restart-sidekiq
+#+end_src
 
 * TODO Ansible todo list
 + [ ] Extend windows module
