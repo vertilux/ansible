@@ -2,6 +2,7 @@
 - hosts: web_servers
   remote_user: deploy
   become: yes
+
   tasks:
   - name: Restart Nginx
     raw: sudo service nginx restart

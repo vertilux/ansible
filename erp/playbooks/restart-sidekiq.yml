@@ -5,11 +5,17 @@
   pre_tasks:
     - pause:
         prompt: |
-          Select env variable:
+          Select environment:
           1- accltd
-          2- mxpdat
-          3- espdat
-          4- rdmdat
+          2- bzidat
+          3- covdat
+          4- espdat
+          5- mxpdat
+          6- prndat
+          7- pwcdat
+          8- rdmdat
+          9- saldat
+          10- wcpdat
       when: env is not defined
       register: prompt
 

@@ -13,6 +13,7 @@
 package="acli"
 COLUMNS=12
 
+
 while test $# -gt 0; do
   case "$1" in
     -h|--help)
@@ -45,7 +46,10 @@ while test $# -gt 0; do
       echo " "
       echo "$(tput setaf 1)Instructions for ERP Web Application"
       echo "$(tput setaf 2)options: $(tput setaf 4)erp$(tput setaf 7)"
-      echo "--restart-sidekiq       Restart sidekiq queue processing job."
+      echo "-s, --restart-sidekiq   Restart sidekiq queue processing job."
+      echo "-m, --maintenance       Set/Unset ERP to maintenance mode."
+      echo "-p, --restart-passenger Restart Phusion Passenger application server."
+      echo "-n, --restart-nginx     Restart Nginx web server."
       exit 0
       ;;
 
@@ -179,10 +183,10 @@ while test $# -gt 0; do
       if test $# -gt 0; then
         case "$1" in
           # Restart sidekiq service
-          --restart-sidekiq)
+          -s|--restart-sidekiq)
             shift
-              PS3='Select env: '
-              envs=(accltd mxpdat)
+              PS3="$(tput setaf 4) Select environment: $(tput setaf 7)"
+              envs=(accltd bzidat covdat espdat mxpdat prndat pwcdat rdmdat saldat wcpdat)
               select env in "${envs[@]}"; do
                 play=$( ansible-playbook erp/playbooks/restart-sidekiq.yml -K -i erp/playbooks/inventory --extra-vars="env=$env" )
                 error=$(echo "$play" | grep "fatal")
@@ -190,15 +194,76 @@ while test $# -gt 0; do
                 if [ -z "$error" ]; then
                   echo "$(tput setaf 1) $error"
                   echo "$(tput setaf 7) $recap"
+                  exit 0
                 else
                   echo "$(tput setaf 7) $recap"
+                  exit 0
                 fi
               done
             shift
-          ;;
+            ;;
+
+          # Set or Unset maintenance mode
+          -m|--maintenance)
+            shift
+              PS3="$(tput setaf 4) Select environment: $(tput setaf 7)"
+              envs=(accltd bzidat covdat espdat mxpdat prndat pwcdat rdmdat saldat wcpdat)
+              select env in "${envs[@]}"; do
+                play=$( ansible-playbook erp/playbooks/maintenance-mode.yml -i erp/playbooks/inventory --extra-vars="env=$env" )
+                error=$(echo "$play" | grep "fatal")
+                recap=$(echo "$play" | grep "ok=" | awk '{print $1, $3, $4, $6}')
+                if [ -z "$error" ]; then
+                  echo "$(tput setaf 1) $error"
+                  echo "$(tput setaf 7) $recap"
+                  exit 0
+                else
+                  echo "$(tput setaf 7) $recap"
+                  exit 0
+                fi
+              done
+            shift
+            ;;
+
+          # Restart Passenger App Server
+          -p|--restart-passenger)
+            shift
+              PS3="$(tput setaf 4) Select environment: $(tput setaf 7)"
+              envs=(accltd bzidat covdat espdat mxpdat prndat pwcdat rdmdat saldat wcpdat)
+              select env in "${envs[@]}"; do
+                play=$( ansible-playbook erp/playbooks/restart-passenger.yml -i erp/playbooks/inventory --extra-vars="env=$env" )
+                error=$(echo "$play" | grep "fatal")
+                recap=$(echo "$play" | grep "ok=" | awk '{print $1, $3, $4, $6}')
+                if [ -z "$error" ]; then
+                  echo "$(tput setaf 1) $error"
+                  echo "$(tput setaf 7) $recap"
+                  exit 0
+                else
+                  echo "$(tput setaf 7) $recap"
+                  exit 0
+                fi
+              done
+            shift
+            ;;
+
+          # Restart Nginx Web Server
+          -n|--restart-nginx)
+            shift
+              play=$( ansible-playbook erp/playbooks/restart-nginx.yml -K -i erp/playbooks/inventory )
+              error=$(echo "$play" | grep "fatal")
+              recap=$(echo "$play" | grep "ok=" | awk '{print $1, $3, $4, $6}')
+              if [ -z "$error" ]; then
+                echo "$(tput setaf 1) $error"
+                echo "$(tput setaf 7) $recap"
+                exit 0
+              else
+                echo "$(tput setaf 7) $recap"
+                exit 0
+              fi
+            shift
+            ;;
         esac
       else
-          echo "Wrong number of arguments"
+        echo "Wrong number of arguments, try ./acli -h for help"
       fi
       shift
       ;;

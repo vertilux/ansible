@@ -498,6 +498,13 @@ options:
 Instructions for QNAP NAS
 options:
 --del                   Delete old backups (older than 3 days).
+
+Instructions for ERP Web Application
+options: erp
+-s, --restart-sidekiq   Restart sidekiq queue processing job.
+-m, --maintenance       Set/Unset ERP to maintenance mode.
+-p, --restart-passenger Restart Phusion Passenger application server.
+-n, --restart-nginx     Restart Nginx web server.
 #+end_example
 
 
@@ -562,8 +569,23 @@ Sidekiq uses threads to handle many jobs at the same time in the same process. I
 ./acli erp --restart-sidekiq
 #+end_src
 
-* TODO Ansible todo list
-+ [ ] Extend windows module
-+ [x] Create a bash script to group and execute playbooks
-+ [x] Refector ERP playbooks
-+ [x] Separate ERP playbooks from non-ERP
+*** Maintenance mode
+Setting up the ERP web application into maintenance mode.
+
+#+begin_src bash
+./acli erp --maintenance
+#+end_src
+
+*** Restart Phusion Passenger
+Passenger is an application server that is in integrated with Nginx and supported our Ruby on Rails app.
+
+#+begin_src bash
+./acli erp --restart-passenger
+#+end_src
+
+*** Restart Nginx
+Nginx is our default web server and load balancer for the ERP infrastructure.
+
+#+begin_src bash
+./acli erp --restart-nginx
+#+end_src
