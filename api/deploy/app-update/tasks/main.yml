@@ -1,0 +1,28 @@
+---
+# tasks file for app-update
+
+- name: Ansible check directory.
+  stat:
+    path: /home/deploy/RESTful-API
+  register: app
+
+- name: Git Pull from Version Control
+  command: git pull origin {{branch}}
+  args:
+    chdir: /home/deploy/RESTful-API
+  when: app.stat.exists
+
+- name: Create app directory
+  file:
+    path: /home/deploy/RESTful-API
+    state: directory
+    mode: 0755
+    group: deploy
+    owner: deploy
+  when: app.stat.exists == false
+
+- name: Git clone form Version Control
+  command: git clone -b {{branch}} git@github.com:vertilux/RESTful-API.git /home/deploy/RESTful-API
+  args:
+    chdir: /home/deploy/RESTful-API
+  when: app.stat.exists == false

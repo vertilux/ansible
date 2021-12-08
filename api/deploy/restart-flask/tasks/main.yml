@@ -1,0 +1,10 @@
+---
+# tasks file for restart-nginx
+
+- name: Restart API service
+  become: yes
+  #raw: sudo service api restart
+  #raw: sudo systemctl restart api
+  service:
+    name: api
+    state: restarted

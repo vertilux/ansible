@@ -1,0 +1,2 @@
+[servers]
+api ansible_host=137.184.63.106 ansible_user=deploy

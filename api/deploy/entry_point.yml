@@ -1,0 +1,8 @@
+- hosts: api
+  vars_files:
+    - "vars/public.yml"
+  remote_user: "{{remote_user}}"
+  roles:
+    - app-update
+    - restart-flask
+    - restart-nginx

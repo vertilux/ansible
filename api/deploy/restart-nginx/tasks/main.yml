@@ -1,0 +1,10 @@
+---
+# tasks file for restart-nginx
+
+- name: Restart Nginx
+  become: yes
+  #raw: sudo service nginx restart
+  #raw: sudo systemctl restart nginx
+  service:
+    name: nginx
+    state: restarted
