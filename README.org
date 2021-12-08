@@ -41,6 +41,17 @@ git clone git@github.com:vertilux/ansible.git
 
 Then cd into the ansible directory: $ ~cd  ansible~
 
+* VTX API
+** Deploy
+VTX API is a set of programming code that enables data transmission between one software product and another, based on REST architecture.\\
+It allows simple queries againts Vertilux Databases. Our API has predictable resource-oriented URLs, returns JSON-encoded responses, and uses standard HTTP response codes.
+
+*** Playbook
+
+#+begin_src bash
+ansible-playbook entry_point.yml -i inventory
+#+end_src
+
 * ERP
 ** Deploy
 This playbook contains multiples roles to deploy new versions or ERP updates to production.
@@ -556,6 +567,14 @@ We use QNAP as our main Network-attached storage (NAS).
 *** Remove old SQL Backups
 #+begin_src bash
 ./acli --del
+#+end_src
+
+** VTX API
+Vertilux RESTful API is a Flask application that allows simple queries againts Vertilux Databases. Our API has predictable resource-oriented URLs, returns JSON-encoded responses, and uses standard HTTP response codes, right now it is only accesible withint our main servers.
+
+*** Deployment
+#+begin_src bash
+./acli api --deploy
 #+end_src
 
 ** ERP Web App
