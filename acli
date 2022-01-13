@@ -271,9 +271,6 @@ while test $# -gt 0; do
       fi
       shift
       ;;
-    *)
-    break
-    ;;
 
     ###########################
     ###      VTX API        ###
