@@ -1,0 +1,32 @@
+---
+- hosts: web_servers
+  remote_user: dpeloy
+
+  vars_prompt:
+    - name: env
+      prompt: "Please enter environment"
+      private: no
+    - name: new_ip
+      prompt: "Please enter new ip address"
+      private: no
+    - name: port_no
+      prompt: "Please enter the port number"
+      private: no
+
+  tasks:
+    - name: "Replace IP address"
+      lineinfile:
+        path: "/home/deploy/erp-{{env}}/shared/config/database.yml"
+        regexp: '^(.*)host:(.*)$'
+        line: "  host: {{new_ip}}"
+        backrefs: yes
+
+    - name: "Replace port number"
+      lineinfile:
+        path: "/home/deploy/erp-{{env}}/shared/config/database.yml"
+        regexp: '^(.*)port:(.*)$'
+        line: "  port: {{port_no}}"
+        backrefs: yes
+
+    - name: "Restart passenger server"
+      command: /bin/bash -l -c "touch /home/deploy/erp-{{env}}/current/tmp/restart.txt"
