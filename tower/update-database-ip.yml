@@ -1,18 +1,5 @@
 ---
 - hosts: all
-  remote_user: dpeloy
-
-  vars_prompt:
-    - name: env
-      prompt: "Please enter environment"
-      private: no
-    - name: new_ip
-      prompt: "Please enter new ip address"
-      private: no
-    - name: port_no
-      prompt: "Please enter the port number"
-      private: no
-
   tasks:
     - name: "Replace IP address"
       lineinfile:
