@@ -224,6 +224,13 @@ Put everything into maintenance.
 ansible-playbook maintenance-mode-all.yml -K -i inventory.yml
 #+end_src
 
+*** Update DB IP Address
+Imagine an scenario where you cannot get a ISP service ofering a static IP address and you need to change your config periodically. With this playbook you can easily update your config in all servers at once.
+
+#+begin_src bash
+ansible-playbook update-database-ip.yml -i inventory
+#+end_src
+
 *** Append Env Variable
 Environment variables are a set of dynamic named values, stored within the system that are used by applications launched. In simple words, an environment variable is a variable with a name and an associated value.
 
@@ -607,4 +614,9 @@ Nginx is our default web server and load balancer for the ERP infrastructure.
 
 #+begin_src bash
 ./acli erp --restart-nginx
+#+end_src
+
+*** Update DB IP address
+#+begin_src bash
+./acli erp --update-ip
 #+end_src

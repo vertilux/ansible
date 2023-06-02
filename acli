@@ -49,6 +49,7 @@ while test $# -gt 0; do
       echo "-m, --maintenance       Set/Unset ERP to maintenance mode."
       echo "-p, --restart-passenger Restart Phusion Passenger application server."
       echo "-n, --restart-nginx     Restart Nginx web server."
+      echo "-u, --update-ip         Update DB IP address."
       echo " "
       echo "$(tput setaf 1)Instructions for Flask API"
       echo "$(tput setaf 2)options: $(tput setaf 4)api$(tput setaf 7)"
@@ -253,6 +254,23 @@ while test $# -gt 0; do
           -n|--restart-nginx)
             shift
               play=$( ansible-playbook erp/playbooks/restart-nginx.yml -K -i erp/playbooks/inventory )
+              error=$(echo "$play" | grep "fatal")
+              recap=$(echo "$play" | grep "ok=" | awk '{print $1, $3, $4, $6}')
+              if [ -z "$error" ]; then
+                echo "$(tput setaf 1) $error"
+                echo "$(tput setaf 7) $recap"
+                exit 0
+              else
+                echo "$(tput setaf 7) $recap"
+                exit 0
+              fi
+            shift
+            ;;
+
+          # Restart Nginx Web Server
+          -u|--update-ip)
+            shift
+              play=$( ansible-playbook erp/playbooks/update-database-ip.yml -i erp/playbooks/inventory )
               error=$(echo "$play" | grep "fatal")
               recap=$(echo "$play" | grep "ok=" | awk '{print $1, $3, $4, $6}')
               if [ -z "$error" ]; then
