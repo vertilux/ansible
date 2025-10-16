@@ -1,9 +1,12 @@
 ---
-- name: Restart Nginx service on load balancer
+- name: Restart Nginx on load balancer
   hosts: load_balancer
+  gather_facts: false
   become: yes
+
   tasks:
     - name: Restart Nginx
-      service:
+      ansible.builtin.systemd:
         name: nginx
         state: restarted
+        daemon_reload: yes
