@@ -1,0 +1,16 @@
+---
+- hosts: app_servers
+  become: yes
+  gather_facts: no
+
+  tasks:
+    - name: Restart Elasticsearch service
+      ansible.builtin.service:
+        name: elasticsearch
+        state: restarted
+
+    - name: Wait for Elasticsearch to be up (9200)
+      ansible.builtin.wait_for:
+        host: 127.0.0.1
+        port: 9200
+        timeout: 60
