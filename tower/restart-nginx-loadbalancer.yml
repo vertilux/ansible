@@ -1,6 +1,6 @@
 ---
 - name: Restart Nginx service on load balancer
-  hosts: load_balancer
+  hosts: load-balancer
   become: yes
   tasks:
     - name: Restart Nginx
