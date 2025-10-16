@@ -1,0 +1,9 @@
+---
+- name: Restart Nginx service on load balancer
+  hosts: load_balancer
+  become: yes
+  tasks:
+    - name: Restart Nginx
+      service:
+        name: nginx
+        state: restarted
