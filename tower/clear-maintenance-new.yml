@@ -16,10 +16,14 @@
     keep_logs_days: 14
 
   tasks:
-    - name: Capture disk usage BEFORE
-      command: df -hT --output=source,size,used,avail,pcent,target -x tmpfs -x devtmpfs
+    # -------- df BEFORE --------
+    - name: Capture disk usage BEFORE (portable; exclude tmpfs/devtmpfs)
+      shell: >
+        df -h --output=source,size,used,avail,pcent,target
+        | awk 'NR==1 || ($1 !~ /(tmpfs|devtmpfs)/)'
       register: disk_before
       changed_when: false
+      failed_when: false
 
     - name: Show disk usage BEFORE
       debug:
@@ -27,6 +31,7 @@
           Disk usage BEFORE cleanup on {{ inventory_hostname }}:
           {{ (disk_before.stdout_lines | default(['N/A'])) | join('\n') }}
 
+    # -------- limpiar cache --------
     - name: Remove cached files (tmp/cache) for each app
       file:
         path: "/home/deploy/{{ item }}/current/tmp/cache"
@@ -42,6 +47,7 @@
         mode: '0755'
       loop: "{{ apps }}"
 
+    # -------- logs viejos --------
     - name: Find old log files (older than {{ keep_logs_days }} days)
       find:
         paths: "/home/deploy/{{ item }}/current/log"
@@ -62,10 +68,14 @@
         state: absent
       loop: "{{ logs_to_delete | default([]) }}"
 
-    - name: Capture disk usage AFTER
-      command: df -hT --output=source,size,used,avail,pcent,target -x tmpfs -x devtmpfs
+    # -------- df AFTER --------
+    - name: Capture disk usage AFTER (portable; exclude tmpfs/devtmpfs)
+      shell: >
+        df -h --output=source,size,used,avail,pcent,target
+        | awk 'NR==1 || ($1 !~ /(tmpfs|devtmpfs)/)'
       register: disk_after
       changed_when: false
+      failed_when: false
 
     - name: Show cleanup summary (BEFORE vs AFTER)
       debug:
