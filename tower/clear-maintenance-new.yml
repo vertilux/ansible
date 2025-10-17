@@ -16,26 +16,24 @@
     keep_logs_days: 14
 
   tasks:
-    - name: Capture disk usage before cleanup
-      command: df -h --output=source,size,used,avail,pcent,target -x tmpfs -x devtmpfs
+    - name: Capture disk usage BEFORE
+      command: df -hT --output=source,size,used,avail,pcent,target -x tmpfs -x devtmpfs
       register: disk_before
       changed_when: false
-      ignore_errors: true
 
-    - name: Show disk usage before cleanup
+    - name: Show disk usage BEFORE
       debug:
         msg: |
-           Disk usage BEFORE cleanup on {{ inventory_hostname }}:
-          {{ disk_before.stdout_lines | default(['N/A']) | join('\n') }}
+          Disk usage BEFORE cleanup on {{ inventory_hostname }}:
+          {{ (disk_before.stdout_lines | default(['N/A'])) | join('\n') }}
 
-    - name: Remove cached files (tmp/cache)
+    - name: Remove cached files (tmp/cache) for each app
       file:
         path: "/home/deploy/{{ item }}/current/tmp/cache"
         state: absent
       loop: "{{ apps }}"
-      ignore_errors: true
 
-    - name: Recreate cache directories
+    - name: Recreate cache directories (so app can write again)
       file:
         path: "/home/deploy/{{ item }}/current/tmp/cache"
         state: directory
@@ -43,41 +41,41 @@
         group: deploy
         mode: '0755'
       loop: "{{ apps }}"
-      ignore_errors: true
 
     - name: Find old log files (older than {{ keep_logs_days }} days)
       find:
         paths: "/home/deploy/{{ item }}/current/log"
         age: "{{ keep_logs_days }}d"
         recurse: yes
+        file_type: file
       loop: "{{ apps }}"
       register: old_logs
-      ignore_errors: true
 
-    - name: Delete found old log files
+    - name: Build flat list of log files to delete
+      set_fact:
+        logs_to_delete: "{{ (logs_to_delete | default([])) + (item.files | default([])) }}"
+      loop: "{{ old_logs.results | default([]) }}"
+
+    - name: Delete old log files
       file:
         path: "{{ item.path }}"
         state: absent
-      with_items: "{{ old_logs.results | map(attribute='files') | flatten(levels=1) | list }}"
-      when: old_logs.results is defined
-      ignore_errors: true
+      loop: "{{ logs_to_delete | default([]) }}"
 
-    - name: Capture disk usage after cleanup
-      command: df -h --output=source,size,used,avail,pcent,target -x tmpfs -x devtmpfs
+    - name: Capture disk usage AFTER
+      command: df -hT --output=source,size,used,avail,pcent,target -x tmpfs -x devtmpfs
       register: disk_after
       changed_when: false
-      ignore_errors: true
 
-    - name: Show cleanup summary and comparison
+    - name: Show cleanup summary (BEFORE vs AFTER)
       debug:
         msg: |
-           Cleanup completed on {{ inventory_hostname }}
+          Cleanup completed on {{ inventory_hostname }}
+          Apps processed: {{ apps | length }}
+          Log retention: keep last {{ keep_logs_days }} days
 
-           Apps processed: {{ apps | length }}
-           Log cleanup performed (older than {{ keep_logs_days }} days)
-
-           DISK USAGE COMPARISON:
           BEFORE:
-          {{ disk_before.stdout_lines | default(['N/A']) | join('\n') }}
+          {{ (disk_before.stdout_lines | default(['N/A'])) | join('\n') }}
+
           AFTER:
-          {{ disk_after.stdout_lines | default(['N/A']) | join('\n') }}
+          {{ (disk_after.stdout_lines | default(['N/A'])) | join('\n') }}
