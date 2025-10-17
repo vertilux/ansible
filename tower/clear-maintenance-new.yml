@@ -13,28 +13,27 @@
       - erp-pwcdat
       - erp-rdmdat
       - erp-saldat
-    keep_logs_days: 14   # Días de retención de logs
+    keep_logs_days: 14
 
   tasks:
-    # --- DISK STATUS BEFORE CLEANUP ---
     - name: Capture disk usage before cleanup
       command: df -h --output=source,size,used,avail,pcent,target -x tmpfs -x devtmpfs
       register: disk_before
+      changed_when: false
+      ignore_errors: true
 
     - name: Show disk usage before cleanup
       debug:
         msg: |
            Disk usage BEFORE cleanup on {{ inventory_hostname }}:
-          {{ disk_before.stdout_lines | join('\n') }}
+          {{ disk_before.stdout_lines | default(['N/A']) | join('\n') }}
 
-    # --- CLEAN CACHE FILES ---
     - name: Remove cached files (tmp/cache)
       file:
         path: "/home/deploy/{{ item }}/current/tmp/cache"
         state: absent
       loop: "{{ apps }}"
-      ignore_errors: yes
-      register: cache_cleanup
+      ignore_errors: true
 
     - name: Recreate cache directories
       file:
@@ -44,8 +43,8 @@
         group: deploy
         mode: '0755'
       loop: "{{ apps }}"
+      ignore_errors: true
 
-    # --- CLEAN OLD LOGS ---
     - name: Find old log files (older than {{ keep_logs_days }} days)
       find:
         paths: "/home/deploy/{{ item }}/current/log"
@@ -53,36 +52,32 @@
         recurse: yes
       loop: "{{ apps }}"
       register: old_logs
+      ignore_errors: true
 
     - name: Delete found old log files
       file:
         path: "{{ item.path }}"
         state: absent
       with_items: "{{ old_logs.results | map(attribute='files') | flatten(levels=1) | list }}"
-      when: old_logs.results | length > 0
-      ignore_errors: yes
+      when: old_logs.results is defined
+      ignore_errors: true
 
-    # --- DISK STATUS AFTER CLEANUP ---
     - name: Capture disk usage after cleanup
       command: df -h --output=source,size,used,avail,pcent,target -x tmpfs -x devtmpfs
       register: disk_after
+      changed_when: false
+      ignore_errors: true
 
-    - name: Show disk usage after cleanup
-      debug:
-        msg: |
-           Disk usage AFTER cleanup on {{ inventory_hostname }}:
-          {{ disk_after.stdout_lines | join('\n') }}
-
-    # --- COMPARE AND SUMMARIZE ---
     - name: Show cleanup summary and comparison
       debug:
         msg: |
            Cleanup completed on {{ inventory_hostname }}
-           Caches cleared for {{ cache_cleanup.results | length }} apps
-           Logs removed: {{ old_logs.results | length }} app folders checked
-          
+
+           Apps processed: {{ apps | length }}
+           Log cleanup performed (older than {{ keep_logs_days }} days)
+
            DISK USAGE COMPARISON:
           BEFORE:
-          {{ disk_before.stdout_lines | join('\n') }}
+          {{ disk_before.stdout_lines | default(['N/A']) | join('\n') }}
           AFTER:
-          {{ disk_after.stdout_lines | join('\n') }}
+          {{ disk_after.stdout_lines | default(['N/A']) | join('\n') }}
