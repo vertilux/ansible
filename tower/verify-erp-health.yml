@@ -1,0 +1,13 @@
+---
+- name: Verify ERP web response
+  hosts: localhost
+  gather_facts: no
+  tasks:
+    - name: Check ERP main endpoint
+      uri:
+        url: "https://erp.vertilux.com/"
+        status_code: 200
+        validate_certs: no
+      register: result
+    - debug:
+        msg: "ERP responded with status: {{ result.status }}"
