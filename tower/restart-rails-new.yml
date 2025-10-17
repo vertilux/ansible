@@ -1,0 +1,64 @@
+---
+- name: Restart Rails apps (Passenger) by touching restart file
+  hosts: app_servers
+  become: yes
+  gather_facts: no
+
+  vars:
+    app_root: /home/deploy
+    app_prefix: erp
+    # List the companies/apps to restart (exclude beta here)
+    apps:
+      - accltd
+      - bzidat
+      - espdat
+      - mxpdat
+      - pwcdat
+      - rdmdat
+      - saldat
+
+  tasks:
+    - name: Show target host and apps
+      debug:
+        msg: "Host {{ inventory_hostname }} → will restart: {{ apps | join(', ') }}"
+
+    - name: Ensure Passenger tmp dir exists (per app)
+      file:
+        path: "{{ app_root }}/{{ app_prefix }}-{{ item }}/current/tmp"
+        state: directory
+        owner: deploy
+        group: deploy
+        mode: "0775"
+      loop: "{{ apps }}"
+      loop_control:
+        label: "{{ app_prefix }}-{{ item }}"
+      tags: [ensure_tmp]
+
+    - name: Touch restart.txt (Passenger rolling restart)
+      become_user: deploy
+      file:
+        path: "{{ app_root }}/{{ app_prefix }}-{{ item }}/current/tmp/restart.txt"
+        state: touch
+        modification_time: preserve
+        access_time: preserve
+      loop: "{{ apps }}"
+      loop_control:
+        label: "{{ app_prefix }}-{{ item }}"
+      register: passenger_touch
+      tags: [restart]
+
+    - name: Report what was restarted on this host
+      debug:
+        msg: >
+          Passenger restart triggered for apps: {{
+            passenger_touch.results
+            | map(attribute='item')
+            | map('regex_replace', '^', app_prefix ~ '-')
+            | join(', ')
+          }}
+
+    # (Opcional) Pequeño “breathing time” por si el host está cargado
+    - name: Wait a short grace period
+      wait_for:
+        timeout: 5
+      tags: [wait]
