@@ -1,5 +1,5 @@
 ---
-- name: Clean cached and log files on all app servers
+- name: Clean cached and log files on all app servers and compare disk usage
   hosts: app_servers
   become: yes
   gather_facts: no
@@ -13,13 +13,21 @@
       - erp-pwcdat
       - erp-rdmdat
       - erp-saldat
-    keep_logs_days: 14   # Cambia esto si quieres conservar más días de logs
+    keep_logs_days: 14   # Días de retención de logs
 
   tasks:
-    - name: Show target host and apps to be cleaned
-      debug:
-        msg: "Cleaning cache and logs on {{ inventory_hostname }} for {{ apps | join(', ') }}"
+    # --- DISK STATUS BEFORE CLEANUP ---
+    - name: Capture disk usage before cleanup
+      command: df -h --output=source,size,used,avail,pcent,target -x tmpfs -x devtmpfs
+      register: disk_before
 
+    - name: Show disk usage before cleanup
+      debug:
+        msg: |
+           Disk usage BEFORE cleanup on {{ inventory_hostname }}:
+          {{ disk_before.stdout_lines | join('\n') }}
+
+    # --- CLEAN CACHE FILES ---
     - name: Remove cached files (tmp/cache)
       file:
         path: "/home/deploy/{{ item }}/current/tmp/cache"
@@ -37,7 +45,8 @@
         mode: '0755'
       loop: "{{ apps }}"
 
-    - name: Remove old log files (older than {{ keep_logs_days }} days)
+    # --- CLEAN OLD LOGS ---
+    - name: Find old log files (older than {{ keep_logs_days }} days)
       find:
         paths: "/home/deploy/{{ item }}/current/log"
         age: "{{ keep_logs_days }}d"
@@ -53,8 +62,27 @@
       when: old_logs.results | length > 0
       ignore_errors: yes
 
-    - name: Show cleanup summary
+    # --- DISK STATUS AFTER CLEANUP ---
+    - name: Capture disk usage after cleanup
+      command: df -h --output=source,size,used,avail,pcent,target -x tmpfs -x devtmpfs
+      register: disk_after
+
+    - name: Show disk usage after cleanup
       debug:
-        msg: >
-          Cache cleaned: {{ cache_cleanup.results | length }} apps,
-          Old logs removed: {{ old_logs.results | length }}
+        msg: |
+           Disk usage AFTER cleanup on {{ inventory_hostname }}:
+          {{ disk_after.stdout_lines | join('\n') }}
+
+    # --- COMPARE AND SUMMARIZE ---
+    - name: Show cleanup summary and comparison
+      debug:
+        msg: |
+           Cleanup completed on {{ inventory_hostname }}
+           Caches cleared for {{ cache_cleanup.results | length }} apps
+           Logs removed: {{ old_logs.results | length }} app folders checked
+          
+           DISK USAGE COMPARISON:
+          BEFORE:
+          {{ disk_before.stdout_lines | join('\n') }}
+          AFTER:
+          {{ disk_after.stdout_lines | join('\n') }}
