@@ -1,35 +1,63 @@
 ---
-- name: Toggle / set maintenance mode per company (survey-driven)
+- name: Toggle / set maintenance mode per company (survey-driven, human names supported)
   hosts: app_servers
   become: yes
   gather_facts: false
 
-  # Survey variables esperadas:
+  # Survey variables expected:
   # - op: "on" | "off" | "toggle"
-  # - companies: lista como ["accltd","espdat",...]
+  # - companies: list like ["Vertilux, LTD - Miami (accltd)", "espdat", ...]
   vars:
-    # PATH de rbenv para que `bundle` y `rake` funcionen como usuario deploy
+    # Map code -> Human name
+    company_map:
+      accltd: "Vertilux, LTD - Miami"
+      bzidat: "Inpec - Brazil"
+      espdat: "VTX Blinds, S.L - Spain"
+      mxpdat: "Vertisol - Mexico"
+      pwcdat: "Selca - Panama"
+      rdmdat: "Dopeco - Dominican"
+      saldat: "VTX Windows Covering - El Salvador"
+      covdat: "Superco - Colombia"
+      prndat: "Verticolor - Puerto Rico"
+      wepdat: "Windows Covering - Panama"
+
+    # rbenv PATH so `bundle` and `rake` resolve correctly as deploy user
     rbenv_path: "/home/deploy/.rbenv/plugins/ruby-build/bin:/home/deploy/.rbenv/bin:/home/deploy/.rbenv/shims:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
-    # (opcional) lista blanca para validar compañías y evitar typos
-    valid_companies: [accltd,bzidat,espdat,mxpdat,pwcdat,rdmdat,saldat,covdat,prndat,wepdat]
-
   pre_tasks:
-    - name: Validate survey inputs
+    - name: Validate basic inputs are present
       assert:
         that:
           - op is defined
           - op in ['on','off','toggle']
           - companies is defined
           - companies | length > 0
-          - (companies | difference(valid_companies)) | length == 0
-        fail_msg: >-
-          Survey must provide 'op' in [on, off, toggle] and a non-empty 'companies' list.
-          Unknown company in 'companies'. Valid: {{ valid_companies | join(', ') }}
+        fail_msg: "Survey must provide 'op' in [on, off, toggle] and a non-empty 'companies' list."
 
-    - name: Show plan (operation and target companies)
+    - name: Normalize company inputs to codes (accept 'Name (code)' or plain code)
+      vars:
+        _codes: []
+      set_fact:
+        companies_codes: "{{ (_codes + [ (item | regex_search('\\(([^)]+)\\)', '\\1')) | default(item) | lower | trim ]) }}"
+      loop: "{{ companies }}"
+      loop_control:
+        label: "{{ item }}"
+      when: companies is iterable
+
+    - name: Validate all normalized codes are known
+      assert:
+        that:
+          - (companies_codes | difference(company_map.keys())) | length == 0
+        fail_msg: >-
+          Unknown company code in selection: {{ (companies_codes | difference(company_map.keys())) | join(', ') }}.
+          Valid codes are: {{ company_map.keys() | list | join(', ') }}
+
+    - name: Show plan (operation and target companies + codes)
       debug:
-        msg: "op={{ op }} | Companies={{ companies | join(', ') }} | Host={{ inventory_hostname }}"
+        msg: >-
+          op={{ op }} |
+          Companies={{ companies_codes | map('regex_replace','^(.*)$', company_map.get('\\1') ~ ' (\\1)') | list | join(', ') }} |
+          Host={{ inventory_hostname }}
 
   tasks:
     - name: Process each selected company
@@ -40,7 +68,10 @@
             app_name: "erp-{{ item }}"
             app_root: "/home/deploy/erp-{{ item }}/current"
             maintenance_file: "/home/deploy/erp-{{ item }}/current/tmp/maintenance.yml"
-
+            app_human: "{{ company_map[item] | default(item) }}"
+          vars:
+            item: "{{ item }}"
+          when: item in company_map
         - name: Check if the app exists on this host
           stat:
             path: "{{ app_root }}"
@@ -48,7 +79,7 @@
 
         - name: Skip if the app is not present here
           debug:
-            msg: "Skipping {{ app_name }} on {{ inventory_hostname }} (app not present)."
+            msg: "Skipping {{ app_human }} ({{ app_name }}) on {{ inventory_hostname }}: app not present."
           when: not app_dir.stat.exists
 
         - name: Read .rbenv-vars if present
@@ -70,7 +101,7 @@
 
         - name: Show effective RAILS_ENV for this app
           debug:
-            msg: "App {{ app_name }} -> RAILS_ENV={{ rails_env_current_app }}"
+            msg: "App {{ app_human }} ({{ app_name }}) -> RAILS_ENV={{ rails_env_current_app }}"
           when: app_dir.stat.exists
 
         - name: Check current maintenance status (file presence)
@@ -116,11 +147,11 @@
         - name: Report result for this app
           debug:
             msg: >-
-              {{ app_name }} on {{ inventory_hostname }} |
+              {{ app_human }} ({{ app_name }}) on {{ inventory_hostname }} |
               RAILS_ENV={{ rails_env_current_app }} |
               maintenance file exists={{ maint_stat.stat.exists | default('n/a') }} |
               started={{ _do_start | default(false) }} |
               ended={{ _do_end | default(false) }}
-      loop: "{{ companies }}"
+      loop: "{{ companies_codes }}"
       loop_control:
-        label: "{{ item }}"
+        label: "{{ company_map[item] | default(item) }} ({{ item }})"
