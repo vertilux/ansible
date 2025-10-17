@@ -5,7 +5,6 @@
   gather_facts: no
 
   vars:
-    # Full catalog (used when survey selection is empty)
     apps_all:
       - erp-accltd
       - erp-bzidat
@@ -14,34 +13,25 @@
       - erp-pwcdat
       - erp-rdmdat
       - erp-saldat
-
-    # --- values provided by Survey ---
-    # op ∈ {on, off, toggle}
+    # usa este nombre exacto en el Survey
     op: "{{ op | default('toggle') }}"
-    # multiple choice list from survey; may come as ["accltd","mxpdat", ...] or with "erp-" prefix
     apps_selected: "{{ apps_selected | default([]) }}"
-
-    # Normalize selected apps; if nothing selected → all
     apps: >-
       {{ (apps_selected | length > 0)
          | ternary(apps_selected | map('regex_replace', '^(?!erp-)', 'erp-') | list,
                    apps_all) }}
-
-    # PATH to ensure rbenv shims and bundle are available non-interactively
     rbenv_path: "/home/deploy/.rbenv/plugins/ruby-build/bin:/home/deploy/.rbenv/bin:/home/deploy/.rbenv/shims:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
   pre_tasks:
     - name: Validate op choice
       assert:
         that:
-          - op in ['on', 'off', 'toggle']
+          - op in ['on','off','toggle']
         fail_msg: "Invalid op '{{ op }}' (must be one of: on, off, toggle)."
-      tags: always
 
     - name: Show plan (target apps and op)
       debug:
         msg: "op={{ op }} → Apps={{ apps | join(', ') }}"
-      tags: always
 
   tasks:
     - name: Compute per-app paths and env
@@ -78,6 +68,26 @@
       loop_control:
         label: "{{ item.ansible_facts.app_name }} (env={{ item.ansible_facts.app_env }})"
 
+    - name: Ensure maintenance file exists (after start)
+      file:
+        path: "{{ item.ansible_facts.maintenance_file }}"
+        state: file
+      when:
+        - op == 'on'
+      loop: "{{ app_facts.results }}"
+      loop_control:
+        label: "{{ item.ansible_facts.app_name }}"
+
+    - name: Touch restart.txt (after start)
+      file:
+        path: "{{ item.ansible_facts.app_root }}/tmp/restart.txt"
+        state: touch
+      when:
+        - op == 'on'
+      loop: "{{ app_facts.results }}"
+      loop_control:
+        label: "{{ item.ansible_facts.app_name }}"
+
     # ----- op: OFF -----
     - name: Disable maintenance (rake maintenance:end) when requested and currently ON
       shell: |
@@ -92,6 +102,26 @@
       loop: "{{ app_facts.results }}"
       loop_control:
         label: "{{ item.ansible_facts.app_name }} (env={{ item.ansible_facts.app_env }})"
+
+    - name: Ensure maintenance file absent (after end)
+      file:
+        path: "{{ item.ansible_facts.maintenance_file }}"
+        state: absent
+      when:
+        - op in ['off','toggle']
+      loop: "{{ app_facts.results }}"
+      loop_control:
+        label: "{{ item.ansible_facts.app_name }}"
+
+    - name: Touch restart.txt (after end/toggle)
+      file:
+        path: "{{ item.ansible_facts.app_root }}/tmp/restart.txt"
+        state: touch
+      when:
+        - op in ['off','toggle']
+      loop: "{{ app_facts.results }}"
+      loop_control:
+        label: "{{ item.ansible_facts.app_name }}"
 
     # ----- op: TOGGLE -----
     - name: Toggle maintenance ON→OFF / OFF→ON based on current state
