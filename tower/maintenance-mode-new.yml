@@ -1,189 +1,121 @@
 ---
-- name: Toggle/set ERP maintenance mode per company (survey-driven)
+- name: Toggle / set maintenance mode per company (survey-driven)
   hosts: app_servers
   become: yes
-  gather_facts: no
+  gather_facts: false
 
+  # Expect these via Survey
+  # action: on | off | toggle
+  # companies: list like ["accltd","espdat",...]
   vars:
-    # Catalog: code -> human label
-    apps_catalog:
-      erp-accltd: "Vertilux, LTD - Miami"
-      erp-bzidat: "Inpec - Brazil"
-      erp-espdat: "VTX Blinds, S.L - Spain"
-      erp-mxpdat: "Vertisol - Mexico"
-      erp-pwcdat: "Selca - Panama"
-      erp-rdmdat: "Dopeco - Dominican"
-      erp-saldat: "VTX Windows Covering - El Salvador"
-      erp-covdat: "Superco - Colombia"
-      erp-prndat: "Verticolor - Puerto Rico"
-      erp-wepdat: "Windows Covering - Panama"
-
-    # Friendly aliases (case-insensitive inputs from the survey) -> canonical app code
-    aliases:
-      vertilux: erp-accltd
-      miami: erp-accltd
-
-      inpec: erp-bzidat
-      brazil: erp-bzidat
-      brasil: erp-bzidat
-
-      spain: erp-espdat
-      españa: erp-espdat
-      espana: erp-espdat
-      vtx spain: erp-espdat
-
-      mexico: erp-mxpdat
-      méxico: erp-mxpdat
-      mex: erp-mxpdat
-      vertisol: erp-mxpdat
-
-      panama: erp-pwcdat
-      selca: erp-pwcdat
-
-      dominican: erp-rdmdat
-      dominicana: erp-rdmdat
-      dopeco: erp-rdmdat
-      rd: erp-rdmdat
-
-      el salvador: erp-saldat
-      salvador: erp-saldat
-      vtx el salvador: erp-saldat
-
-      colombia: erp-covdat
-      superco: erp-covdat
-
-      puerto rico: erp-prndat
-      pr: erp-prndat
-      verticolor: erp-prndat
-
-      wep: erp-wepdat
-      "windows covering panama": erp-wepdat
-      wc panama: erp-wepdat
-
-    # ===== Variables provided by Survey =====
-    # op: on | off | toggle
-    op: "{{ op | default('toggle') }}"
-    # targets: list of strings (aliases or app codes). Example from Survey: ["Spain","Mexico"] or ["erp-espdat","erp-mxpdat"]
-    targets: "{{ targets | default([]) }}"
-
-    # rbenv PATH to run rake
-    ruby_env_path: "/home/deploy/.rbenv/plugins/ruby-build/bin:/home/deploy/.rbenv/bin:/home/deploy/.rbenv/shims:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    # rbenv PATH so `bundle` and `rake` resolve correctly as deploy user
+    rbenv_path: "/home/deploy/.rbenv/plugins/ruby-build/bin:/home/deploy/.rbenv/bin:/home/deploy/.rbenv/shims:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
   pre_tasks:
-    - name: Validate operation (op)
+    - name: Validate survey inputs
       assert:
         that:
-          - op in ['on','off','toggle']
-        fail_msg: "Invalid op '{{ op }}'. Use one of: on, off, toggle."
-        success_msg: "Operation '{{ op }}' is valid."
+          - action is defined
+          - action in ['on','off','toggle']
+          - companies is defined
+          - companies | length > 0
+        fail_msg: "Survey must provide 'action' in [on, off, toggle] and a non-empty list 'companies'."
 
-    - name: Fail if no targets provided
-      assert:
-        that:
-          - (targets | length) > 0
-        fail_msg: "No targets provided. Please select at least one company/app in the Survey."
-        success_msg: "Targets received: {{ targets }}"
-
-    - name: Normalize targets to canonical app codes
-      set_fact:
-        resolved_apps: >-
-          {{
-            targets
-            | map('lower')
-            | map('trim')
-            | map('regex_replace','\\s+',' ')
-            | map('extract', aliases, default=None)
-            | list
-          }}
-      vars:
-        # helper filter: if not found in aliases, keep original as-is (might already be a code)
-        aliases: "{{ aliases | combine( apps_catalog | dict2items | map(attribute='key') | list | items2dict ) }}"
-      # The combine above ensures codes like "erp-espdat" pass-through.
-
-    - name: Replace None entries (not in aliases) with original inputs (for those that already were codes)
-      set_fact:
-        resolved_apps: >-
-          {{
-            resolved_apps | zip(targets) | map('list') | map('last') | list
-            if (resolved_apps | select('equalto', None) | list | length) == (targets | length)
-            else resolved_apps | zip(targets) | map('list') | map('first') | list
-          }}
-
-    - name: Validate that all resolved apps exist in catalog
-      assert:
-        that:
-          - (resolved_apps | select('in', apps_catalog.keys()) | list | length) == (resolved_apps | length)
-        fail_msg: >-
-          One or more targets are invalid: {{ resolved_apps }}.
-          Valid choices: {{ apps_catalog.keys() | sort | join(', ') }}
-        success_msg: "Resolved apps: {{ resolved_apps }}"
-
-    - name: Show plan (target apps and operation)
+    - name: Show plan
       debug:
-        msg: >-
-          Host {{ inventory_hostname }} → will apply '{{ op }}' to:
-          {{ resolved_apps | map('regex_replace','^',' - ') | list | join('\n') }}
+        msg: "Action={{ action }} | Companies={{ companies | join(', ') }} | Host={{ inventory_hostname }}"
 
   tasks:
-    - name: Stat maintenance flag (per app)
-      stat:
-        path: "/home/deploy/{{ item }}/current/tmp/maintenance.yml"
-      loop: "{{ resolved_apps }}"
-      loop_control:
-        label: "{{ item }}"
-      register: mflags
+    - name: Process each selected company
+      block:
+        - name: Define app paths (per company)
+          set_fact:
+            app_name: "erp-{{ item }}"
+            app_root: "/home/deploy/erp-{{ item }}/current"
+            maintenance_file: "/home/deploy/erp-{{ item }}/current/tmp/maintenance.yml"
+          loop: "{{ companies }}"
+          loop_control:
+            loop_var: item
 
-    - name: Start maintenance (only when needed)  # op: on
-      command: /bin/bash -l -c 'cd /home/deploy/{{ item }}/current && bundle exec rake RAILS_ENV=production maintenance:start'
-      environment:
-        PATH: "{{ ruby_env_path }}"
-      loop: "{{ resolved_apps }}"
-      loop_control:
-        label: "{{ item }}"
-      when:
-        - op == 'on'
-        - not (mflags.results | selectattr('item','equalto',item) | map(attribute='stat.exists') | first | default(false))
+        - name: Check if app exists on this host
+          stat:
+            path: "{{ app_root }}"
+          register: app_dir
 
-    - name: End maintenance (only when needed)    # op: off
-      command: /bin/bash -l -c 'cd /home/deploy/{{ item }}/current && bundle exec rake RAILS_ENV=production maintenance:end'
-      environment:
-        PATH: "{{ ruby_env_path }}"
-      loop: "{{ resolved_apps }}"
-      loop_control:
-        label: "{{ item }}"
-      when:
-        - op == 'off'
-        - (mflags.results | selectattr('item','equalto',item) | map(attribute='stat.exists') | first | default(false))
+        - name: Skip nicely if app is not present here
+          debug:
+            msg: "Skipping {{ app_name }} on {{ inventory_hostname }} (app not present)."
+          when: not app_dir.stat.exists
 
-    - name: Toggle maintenance (switch based on current flag)  # op: toggle
-      command: >-
-        /bin/bash -l -c 'cd /home/deploy/{{ item }}/current && bundle exec rake
-        RAILS_ENV=production maintenance:{{
-          (mflags.results | selectattr("item","equalto",item) | map(attribute="stat.exists") | first | default(false))
-          | ternary("end","start")
-        }}'
-      environment:
-        PATH: "{{ ruby_env_path }}"
-      loop: "{{ resolved_apps }}"
-      loop_control:
-        label: "{{ item }}"
-      when: op == 'toggle'
+        - name: Read .rbenv-vars if present
+          slurp:
+            path: "{{ app_root }}/.rbenv-vars"
+          register: rbenv_vars_file
+          when: app_dir.stat.exists
+          ignore_errors: true
 
-    - name: Re-check maintenance flag after operation
-      stat:
-        path: "/home/deploy/{{ item }}/current/tmp/maintenance.yml"
-      loop: "{{ resolved_apps }}"
-      loop_control:
-        label: "{{ item }}"
-      register: mflags_after
+        - name: Compute RAILS_ENV (prefer .rbenv-vars, else use company code)
+          set_fact:
+            rails_env_current_app: >-
+              {{
+                (rbenv_vars_file.content | default('') | b64decode | regex_search('(?m)^RAILS_ENV=(.+)$', '\\1'))
+                | default(item)
+              }}
+          when: app_dir.stat.exists
 
-    - name: Summary per app (ON/OFF)
-      debug:
-        msg: >-
-          {{ item.item }} ({{ apps_catalog[item.item] | default(item.item) }}):
-          maintenance = {{
-            (item.stat.exists | default(false)) | ternary('ON','OFF')
-          }}
-      loop: "{{ mflags_after.results }}"
+        - name: Show effective RAILS_ENV
+          debug:
+            msg: "App {{ app_name }} -> RAILS_ENV={{ rails_env_current_app }}"
+          when: app_dir.stat.exists
+
+        - name: Check current maintenance status
+          stat:
+            path: "{{ maintenance_file }}"
+          register: maint_stat
+          when: app_dir.stat.exists
+
+        - name: Decide target action for this app
+          set_fact:
+            _do_start: "{{ (action == 'on') or (action == 'toggle' and not maint_stat.stat.exists) }}"
+            _do_end:   "{{ (action == 'off') or (action == 'toggle' and maint_stat.stat.exists) }}"
+          when: app_dir.stat.exists
+
+        - name: Start maintenance (idempotent)
+          become_user: deploy
+          environment:
+            PATH: "{{ rbenv_path }}"
+          args:
+            chdir: "{{ app_root }}"
+          shell: >
+            /bin/bash -lc 'bundle exec rake RAILS_ENV={{ rails_env_current_app }} maintenance:start'
+          register: start_out
+          changed_when: "'invoke' in (start_out.stdout|default('')) or 'Executed' in (start_out.stdout|default(''))"
+          when:
+            - app_dir.stat.exists
+            - _do_start
+
+        - name: End maintenance (idempotent)
+          become_user: deploy
+          environment:
+            PATH: "{{ rbenv_path }}"
+          args:
+            chdir: "{{ app_root }}"
+          shell: >
+            /bin/bash -lc 'bundle exec rake RAILS_ENV={{ rails_env_current_app }} maintenance:end'
+          register: end_out
+          changed_when: "'invoke' in (end_out.stdout|default('')) or 'Executed' in (end_out.stdout|default(''))"
+          when:
+            - app_dir.stat.exists
+            - _do_end
+
+        - name: Report result for this app
+          debug:
+            msg: >-
+              {{ app_name }} on {{ inventory_hostname }} |
+              RAILS_ENV={{ rails_env_current_app }} |
+              maintenance file exists={{ maint_stat.stat.exists | default('n/a') }} |
+              started={{ _do_start | default(false) }} |
+              ended={{ _do_end | default(false) }}
+      loop: "{{ companies }}"
       loop_control:
-        label: "{{ item.item }}"
+        loop_var: item
