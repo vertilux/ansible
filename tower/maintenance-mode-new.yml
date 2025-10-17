@@ -4,11 +4,11 @@
   become: yes
   gather_facts: false
 
-  # Survey variables expected:
+  # Survey variables esperadas:
   # - op: "on" | "off" | "toggle"
-  # - companies: list like ["Vertilux, LTD - Miami (accltd)", "espdat", ...]
+  # - companies: lista tipo ["Vertilux, LTD - Miami (accltd)", "espdat", ...]
   vars:
-    # Map code -> Human name
+    # code -> nombre humano
     company_map:
       accltd: "Vertilux, LTD - Miami"
       bzidat: "Inpec - Brazil"
@@ -21,11 +21,11 @@
       prndat: "Verticolor - Puerto Rico"
       wepdat: "Windows Covering - Panama"
 
-    # rbenv PATH so `bundle` and `rake` resolve correctly as deploy user
+    # PATH para que bundle/rake funcionen como deploy/rbenv
     rbenv_path: "/home/deploy/.rbenv/plugins/ruby-build/bin:/home/deploy/.rbenv/bin:/home/deploy/.rbenv/shims:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
   pre_tasks:
-    - name: Validate basic inputs are present
+    - name: Validate survey inputs
       assert:
         that:
           - op is defined
@@ -35,14 +35,12 @@
         fail_msg: "Survey must provide 'op' in [on, off, toggle] and a non-empty 'companies' list."
 
     - name: Normalize company inputs to codes (accept 'Name (code)' or plain code)
-      vars:
-        _codes: []
+      vars: { _codes: [] }
       set_fact:
         companies_codes: "{{ (_codes + [ (item | regex_search('\\(([^)]+)\\)', '\\1')) | default(item) | lower | trim ]) }}"
       loop: "{{ companies }}"
       loop_control:
         label: "{{ item }}"
-      when: companies is iterable
 
     - name: Validate all normalized codes are known
       assert:
@@ -52,7 +50,7 @@
           Unknown company code in selection: {{ (companies_codes | difference(company_map.keys())) | join(', ') }}.
           Valid codes are: {{ company_map.keys() | list | join(', ') }}
 
-    - name: Show plan (operation and target companies + codes)
+    - name: Show plan (operation and targets)
       debug:
         msg: >-
           op={{ op }} |
@@ -60,98 +58,99 @@
           Host={{ inventory_hostname }}
 
   tasks:
-    - name: Process each selected company
-      block:
-        - name: Define paths for this company
-          set_fact:
-            app_code: "{{ item }}"
-            app_name: "erp-{{ item }}"
-            app_root: "/home/deploy/erp-{{ item }}/current"
-            maintenance_file: "/home/deploy/erp-{{ item }}/current/tmp/maintenance.yml"
-            app_human: "{{ company_map[item] | default(item) }}"
-          vars:
-            item: "{{ item }}"
-          when: item in company_map
-        - name: Check if the app exists on this host
-          stat:
-            path: "{{ app_root }}"
-          register: app_dir
-
-        - name: Skip if the app is not present here
-          debug:
-            msg: "Skipping {{ app_human }} ({{ app_name }}) on {{ inventory_hostname }}: app not present."
-          when: not app_dir.stat.exists
-
-        - name: Read .rbenv-vars if present
-          slurp:
-            path: "{{ app_root }}/.rbenv-vars"
-          register: rbenv_vars_file
-          when: app_dir.stat.exists
-          ignore_errors: true
-
-        - name: Compute effective RAILS_ENV (prefer .rbenv-vars, else fallback to company code)
-          set_fact:
-            rails_env_current_app: >-
-              {{
-                (rbenv_vars_file.content | default('') | b64decode
-                  | regex_search('(?m)^RAILS_ENV=(.+)$', '\1'))
-                | default(app_code)
-              }}
-          when: app_dir.stat.exists
-
-        - name: Show effective RAILS_ENV for this app
-          debug:
-            msg: "App {{ app_human }} ({{ app_name }}) -> RAILS_ENV={{ rails_env_current_app }}"
-          when: app_dir.stat.exists
-
-        - name: Check current maintenance status (file presence)
-          stat:
-            path: "{{ maintenance_file }}"
-          register: maint_stat
-          when: app_dir.stat.exists
-
-        - name: Decide desired action for this app
-          set_fact:
-            _do_start: "{{ (op == 'on') or (op == 'toggle' and not maint_stat.stat.exists) }}"
-            _do_end:   "{{ (op == 'off') or (op == 'toggle' and maint_stat.stat.exists) }}"
-          when: app_dir.stat.exists
-
-        - name: Start maintenance (idempotent)
-          become_user: deploy
-          environment:
-            PATH: "{{ rbenv_path }}"
-          args:
-            chdir: "{{ app_root }}"
-          shell: >
-            /bin/bash -lc 'bundle exec rake RAILS_ENV={{ rails_env_current_app }} maintenance:start'
-          register: start_out
-          changed_when: "'invoke' in (start_out.stdout|default('')) or 'Executed' in (start_out.stdout|default(''))"
-          when:
-            - app_dir.stat.exists
-            - _do_start
-
-        - name: End maintenance (idempotent)
-          become_user: deploy
-          environment:
-            PATH: "{{ rbenv_path }}"
-          args:
-            chdir: "{{ app_root }}"
-          shell: >
-            /bin/bash -lc 'bundle exec rake RAILS_ENV={{ rails_env_current_app }} maintenance:end'
-          register: end_out
-          changed_when: "'invoke' in (end_out.stdout|default('')) or 'Executed' in (end_out.stdout|default(''))"
-          when:
-            - app_dir.stat.exists
-            - _do_end
-
-        - name: Report result for this app
-          debug:
-            msg: >-
-              {{ app_human }} ({{ app_name }}) on {{ inventory_hostname }} |
-              RAILS_ENV={{ rails_env_current_app }} |
-              maintenance file exists={{ maint_stat.stat.exists | default('n/a') }} |
-              started={{ _do_start | default(false) }} |
-              ended={{ _do_end | default(false) }}
+    - name: Check if each app exists on this host
+      stat:
+        path: "/home/deploy/erp-{{ code }}/current"
+      register: app_stats
       loop: "{{ companies_codes }}"
       loop_control:
-        label: "{{ company_map[item] | default(item) }} ({{ item }})"
+        loop_var: code
+        label: "{{ company_map[code] | default(code) }} ({{ code }})"
+
+    - name: Check current maintenance file existence
+      stat:
+        path: "/home/deploy/erp-{{ code }}/current/tmp/maintenance.yml"
+      register: maint_stats
+      loop: "{{ companies_codes }}"
+      loop_control:
+        loop_var: code
+        label: "{{ company_map[code] | default(code) }} ({{ code }})"
+
+    - name: Show which apps are present on this host
+      debug:
+        msg: >-
+          Present here: {{
+            companies_codes
+            | select('equalto', companies_codes[0]) | list | length
+            | ternary('', '')
+          }}
+      when: false  # (placeholder para mantener estructura; la info útil viene en la siguiente tarea)
+
+    - name: List present apps (human + code)
+      debug:
+        msg: >-
+          {{ company_map[item.0] | default(item.0) }} ({{ item.0 }}) present={{ item.1.stat.exists }}
+      loop: "{{ companies_codes | zip(app_stats.results) | list }}"
+
+    # --------- START maintenance for those that need it ---------
+    - name: Start maintenance where applicable
+      become_user: deploy
+      environment:
+        PATH: "{{ rbenv_path }}"
+      args:
+        chdir: "/home/deploy/erp-{{ code }}/current"
+      shell: >
+        /bin/bash -lc '
+          RENV=$(grep -m1 "^RAILS_ENV=" .rbenv-vars 2>/dev/null | cut -d= -f2);
+          RENV=${RENV:-{{ code }}};
+          bundle exec rake RAILS_ENV=$RENV maintenance:start
+        '
+      register: start_out
+      changed_when: "'invoke' in (start_out.stdout|default('')) or 'Executed' in (start_out.stdout|default(''))"
+      loop: "{{ companies_codes }}"
+      loop_control:
+        loop_var: code
+        index_var: idx
+        label: "{{ company_map[code] | default(code) }} ({{ code }})"
+      when:
+        - app_stats.results[idx].stat.exists
+        - op == 'on' or (op == 'toggle' and not maint_stats.results[idx].stat.exists)
+
+    # --------- END maintenance for those that need it ---------
+    - name: End maintenance where applicable
+      become_user: deploy
+      environment:
+        PATH: "{{ rbenv_path }}"
+      args:
+        chdir: "/home/deploy/erp-{{ code }}/current"
+      shell: >
+        /bin/bash -lc '
+          RENV=$(grep -m1 "^RAILS_ENV=" .rbenv-vars 2>/dev/null | cut -d= -f2);
+          RENV=${RENV:-{{ code }}};
+          bundle exec rake RAILS_ENV=$RENV maintenance:end
+        '
+      register: end_out
+      changed_when: "'invoke' in (end_out.stdout|default('')) or 'Executed' in (end_out.stdout|default(''))"
+      loop: "{{ companies_codes }}"
+      loop_control:
+        loop_var: code
+        index_var: idx
+        label: "{{ company_map[code] | default(code) }} ({{ code }})"
+      when:
+        - app_stats.results[idx].stat.exists
+        - op == 'off' or (op == 'toggle' and maint_stats.results[idx].stat.exists)
+
+    - name: Report result per company
+      debug:
+        msg: >-
+          {{ company_map[code] | default(code) }} ({{ code }}) on {{ inventory_hostname }} |
+          present={{ app_stats.results[idx].stat.exists }} |
+          maint_file_before={{ maint_stats.results[idx].stat.exists | default('n/a') }} |
+          op={{ op }} |
+          started={{ (op == 'on') or (op == 'toggle' and not maint_stats.results[idx].stat.exists) }}
+          ended={{ (op == 'off') or (op == 'toggle' and maint_stats.results[idx].stat.exists) }}
+      loop: "{{ companies_codes }}"
+      loop_control:
+        loop_var: code
+        index_var: idx
+        label: "{{ company_map[code] | default(code) }} ({{ code }})"
