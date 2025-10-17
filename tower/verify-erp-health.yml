@@ -1,13 +1,29 @@
----
-- name: Verify ERP web response
+# tower/verify-erp-health.yml
+- name: Verify ERP public endpoint
   hosts: localhost
+  connection: local
   gather_facts: no
+
+  vars:
+    url: "https://erp.vertilux.com/"
+    timeout: 10          # segundos por intento
+    retries: 6           # total ~1 min
+    delay: 10            # pausa entre intentos
+
   tasks:
-    - name: Check ERP main endpoint
+    - name: "HTTP GET {{ url }}"
       uri:
-        url: "https://erp.vertilux.com/"
+        url: "{{ url }}"
+        method: GET
         status_code: 200
-        validate_certs: no
-      register: result
-    - debug:
-        msg: "ERP responded with status: {{ result.status }}"
+        return_content: no
+        validate_certs: yes
+        timeout: "{{ timeout }}"
+      register: _resp
+      retries: "{{ retries }}"
+      delay: "{{ delay }}"
+      until: _resp is succeeded and _resp.status == 200
+
+    - name: Show status
+      debug:
+        msg: "ERP responded with HTTP {{ _resp.status }}"
