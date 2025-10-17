@@ -4,45 +4,49 @@
   become: yes
   gather_facts: false
 
-  # Expect these via Survey
-  # action: on | off | toggle
-  # companies: list like ["accltd","espdat",...]
+  # Survey variables esperadas:
+  # - op: "on" | "off" | "toggle"
+  # - companies: lista como ["accltd","espdat",...]
   vars:
-    # rbenv PATH so `bundle` and `rake` resolve correctly as deploy user
+    # PATH de rbenv para que `bundle` y `rake` funcionen como usuario deploy
     rbenv_path: "/home/deploy/.rbenv/plugins/ruby-build/bin:/home/deploy/.rbenv/bin:/home/deploy/.rbenv/shims:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+    # (opcional) lista blanca para validar compañías y evitar typos
+    valid_companies: [accltd,bzidat,espdat,mxpdat,pwcdat,rdmdat,saldat,covdat,prndat,wepdat]
 
   pre_tasks:
     - name: Validate survey inputs
       assert:
         that:
-          - action is defined
-          - action in ['on','off','toggle']
+          - op is defined
+          - op in ['on','off','toggle']
           - companies is defined
           - companies | length > 0
-        fail_msg: "Survey must provide 'action' in [on, off, toggle] and a non-empty list 'companies'."
+          - (companies | difference(valid_companies)) | length == 0
+        fail_msg: >-
+          Survey must provide 'op' in [on, off, toggle] and a non-empty 'companies' list.
+          Unknown company in 'companies'. Valid: {{ valid_companies | join(', ') }}
 
-    - name: Show plan
+    - name: Show plan (operation and target companies)
       debug:
-        msg: "Action={{ action }} | Companies={{ companies | join(', ') }} | Host={{ inventory_hostname }}"
+        msg: "op={{ op }} | Companies={{ companies | join(', ') }} | Host={{ inventory_hostname }}"
 
   tasks:
     - name: Process each selected company
       block:
-        - name: Define app paths (per company)
+        - name: Define paths for this company
           set_fact:
+            app_code: "{{ item }}"
             app_name: "erp-{{ item }}"
             app_root: "/home/deploy/erp-{{ item }}/current"
             maintenance_file: "/home/deploy/erp-{{ item }}/current/tmp/maintenance.yml"
-          loop: "{{ companies }}"
-          loop_control:
-            loop_var: item
 
-        - name: Check if app exists on this host
+        - name: Check if the app exists on this host
           stat:
             path: "{{ app_root }}"
           register: app_dir
 
-        - name: Skip nicely if app is not present here
+        - name: Skip if the app is not present here
           debug:
             msg: "Skipping {{ app_name }} on {{ inventory_hostname }} (app not present)."
           when: not app_dir.stat.exists
@@ -54,30 +58,31 @@
           when: app_dir.stat.exists
           ignore_errors: true
 
-        - name: Compute RAILS_ENV (prefer .rbenv-vars, else use company code)
+        - name: Compute effective RAILS_ENV (prefer .rbenv-vars, else fallback to company code)
           set_fact:
             rails_env_current_app: >-
               {{
-                (rbenv_vars_file.content | default('') | b64decode | regex_search('(?m)^RAILS_ENV=(.+)$', '\\1'))
-                | default(item)
+                (rbenv_vars_file.content | default('') | b64decode
+                  | regex_search('(?m)^RAILS_ENV=(.+)$', '\1'))
+                | default(app_code)
               }}
           when: app_dir.stat.exists
 
-        - name: Show effective RAILS_ENV
+        - name: Show effective RAILS_ENV for this app
           debug:
             msg: "App {{ app_name }} -> RAILS_ENV={{ rails_env_current_app }}"
           when: app_dir.stat.exists
 
-        - name: Check current maintenance status
+        - name: Check current maintenance status (file presence)
           stat:
             path: "{{ maintenance_file }}"
           register: maint_stat
           when: app_dir.stat.exists
 
-        - name: Decide target action for this app
+        - name: Decide desired action for this app
           set_fact:
-            _do_start: "{{ (action == 'on') or (action == 'toggle' and not maint_stat.stat.exists) }}"
-            _do_end:   "{{ (action == 'off') or (action == 'toggle' and maint_stat.stat.exists) }}"
+            _do_start: "{{ (op == 'on') or (op == 'toggle' and not maint_stat.stat.exists) }}"
+            _do_end:   "{{ (op == 'off') or (op == 'toggle' and maint_stat.stat.exists) }}"
           when: app_dir.stat.exists
 
         - name: Start maintenance (idempotent)
@@ -118,4 +123,4 @@
               ended={{ _do_end | default(false) }}
       loop: "{{ companies }}"
       loop_control:
-        loop_var: item
+        label: "{{ item }}"
