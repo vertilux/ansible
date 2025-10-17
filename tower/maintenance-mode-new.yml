@@ -1,129 +1,189 @@
 ---
-- name: Toggle / set maintenance mode per company (survey-driven)
+- name: Toggle/set ERP maintenance mode per company (survey-driven)
   hosts: app_servers
   become: yes
   gather_facts: no
 
   vars:
-    # Full catalog (used when survey selection is empty)
-    apps_all:
-      - erp-accltd
-      - erp-bzidat
-      - erp-espdat
-      - erp-mxpdat
-      - erp-pwcdat
-      - erp-rdmdat
-      - erp-saldat
+    # Catalog: code -> human label
+    apps_catalog:
+      erp-accltd: "Vertilux, LTD - Miami"
+      erp-bzidat: "Inpec - Brazil"
+      erp-espdat: "VTX Blinds, S.L - Spain"
+      erp-mxpdat: "Vertisol - Mexico"
+      erp-pwcdat: "Selca - Panama"
+      erp-rdmdat: "Dopeco - Dominican"
+      erp-saldat: "VTX Windows Covering - El Salvador"
+      erp-covdat: "Superco - Colombia"
+      erp-prndat: "Verticolor - Puerto Rico"
+      erp-wepdat: "Windows Covering - Panama"
 
-    # --- values provided by Survey ---
-    # action ∈ {on, off, toggle}
-    action: "{{ action | default('toggle') }}"
-    # multiple choice list from survey; may come as ["accltd","mxpdat", ...] or with "erp-" prefix
-    apps_selected: "{{ apps_selected | default([]) }}"
+    # Friendly aliases (case-insensitive inputs from the survey) -> canonical app code
+    aliases:
+      vertilux: erp-accltd
+      miami: erp-accltd
 
-    # Normalize selected apps; if nothing selected → all
-    apps: >-
-      {{ (apps_selected | length > 0)
-         | ternary(apps_selected | map('regex_replace', '^(?!erp-)', 'erp-') | list,
-                   apps_all) }}
+      inpec: erp-bzidat
+      brazil: erp-bzidat
+      brasil: erp-bzidat
 
-    # PATH to ensure rbenv shims and bundle are available non-interactively
-    rbenv_path: "/home/deploy/.rbenv/plugins/ruby-build/bin:/home/deploy/.rbenv/bin:/home/deploy/.rbenv/shims:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+      spain: erp-espdat
+      españa: erp-espdat
+      espana: erp-espdat
+      vtx spain: erp-espdat
+
+      mexico: erp-mxpdat
+      méxico: erp-mxpdat
+      mex: erp-mxpdat
+      vertisol: erp-mxpdat
+
+      panama: erp-pwcdat
+      selca: erp-pwcdat
+
+      dominican: erp-rdmdat
+      dominicana: erp-rdmdat
+      dopeco: erp-rdmdat
+      rd: erp-rdmdat
+
+      el salvador: erp-saldat
+      salvador: erp-saldat
+      vtx el salvador: erp-saldat
+
+      colombia: erp-covdat
+      superco: erp-covdat
+
+      puerto rico: erp-prndat
+      pr: erp-prndat
+      verticolor: erp-prndat
+
+      wep: erp-wepdat
+      "windows covering panama": erp-wepdat
+      wc panama: erp-wepdat
+
+    # ===== Variables provided by Survey =====
+    # op: on | off | toggle
+    op: "{{ op | default('toggle') }}"
+    # targets: list of strings (aliases or app codes). Example from Survey: ["Spain","Mexico"] or ["erp-espdat","erp-mxpdat"]
+    targets: "{{ targets | default([]) }}"
+
+    # rbenv PATH to run rake
+    ruby_env_path: "/home/deploy/.rbenv/plugins/ruby-build/bin:/home/deploy/.rbenv/bin:/home/deploy/.rbenv/shims:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
   pre_tasks:
-    - name: Validate action choice
+    - name: Validate operation (op)
       assert:
         that:
-          - action in ['on', 'off', 'toggle']
-        fail_msg: "Invalid action '{{ action }}' (must be one of: on, off, toggle)."
-      tags: always
+          - op in ['on','off','toggle']
+        fail_msg: "Invalid op '{{ op }}'. Use one of: on, off, toggle."
+        success_msg: "Operation '{{ op }}' is valid."
 
-    - name: Show plan (target apps and action)
-      debug:
-        msg: "Action={{ action }} → Apps={{ apps | join(', ') }}"
-      tags: always
+    - name: Fail if no targets provided
+      assert:
+        that:
+          - (targets | length) > 0
+        fail_msg: "No targets provided. Please select at least one company/app in the Survey."
+        success_msg: "Targets received: {{ targets }}"
 
-  tasks:
-    - name: Compute per-app paths and env
+    - name: Normalize targets to canonical app codes
       set_fact:
-        app_name: "{{ item }}"
-        app_env: "{{ (item | regex_replace('^erp-', '')) }}"
-        app_root: "/home/deploy/{{ item }}/current"
-        maintenance_file: "/home/deploy/{{ item }}/current/tmp/maintenance.yml"
-      loop: "{{ apps }}"
-      loop_control:
-        label: "{{ item }}"
-      register: app_facts
+        resolved_apps: >-
+          {{
+            targets
+            | map('lower')
+            | map('trim')
+            | map('regex_replace','\\s+',' ')
+            | map('extract', aliases, default=None)
+            | list
+          }}
+      vars:
+        # helper filter: if not found in aliases, keep original as-is (might already be a code)
+        aliases: "{{ aliases | combine( apps_catalog | dict2items | map(attribute='key') | list | items2dict ) }}"
+      # The combine above ensures codes like "erp-espdat" pass-through.
 
-    - name: Stat maintenance file for each app
-      stat:
-        path: "{{ item.ansible_facts.maintenance_file }}"
-      loop: "{{ app_facts.results }}"
-      loop_control:
-        label: "{{ item.ansible_facts.app_name }}"
-      register: maint_stats
+    - name: Replace None entries (not in aliases) with original inputs (for those that already were codes)
+      set_fact:
+        resolved_apps: >-
+          {{
+            resolved_apps | zip(targets) | map('list') | map('last') | list
+            if (resolved_apps | select('equalto', None) | list | length) == (targets | length)
+            else resolved_apps | zip(targets) | map('list') | map('first') | list
+          }}
 
-    # ----- ACTION: ON -----
-    - name: Enable maintenance (rake maintenance:start) when requested and currently OFF
-      shell: |
-        set -euo pipefail
-        cd "{{ item.ansible_facts.app_root }}"
-        exec env PATH="{{ rbenv_path }}" bundle exec rake RAILS_ENV="{{ item.ansible_facts.app_env }}" maintenance:start
-      args:
-        executable: /bin/bash
-      when:
-        - action == 'on'
-        - not (maint_stats.results[loop.index0].stat.exists | default(false))
-      loop: "{{ app_facts.results }}"
-      loop_control:
-        label: "{{ item.ansible_facts.app_name }} (env={{ item.ansible_facts.app_env }})"
+    - name: Validate that all resolved apps exist in catalog
+      assert:
+        that:
+          - (resolved_apps | select('in', apps_catalog.keys()) | list | length) == (resolved_apps | length)
+        fail_msg: >-
+          One or more targets are invalid: {{ resolved_apps }}.
+          Valid choices: {{ apps_catalog.keys() | sort | join(', ') }}
+        success_msg: "Resolved apps: {{ resolved_apps }}"
 
-    # ----- ACTION: OFF -----
-    - name: Disable maintenance (rake maintenance:end) when requested and currently ON
-      shell: |
-        set -euo pipefail
-        cd "{{ item.ansible_facts.app_root }}"
-        exec env PATH="{{ rbenv_path }}" bundle exec rake RAILS_ENV="{{ item.ansible_facts.app_env }}" maintenance:end
-      args:
-        executable: /bin/bash
-      when:
-        - action == 'off'
-        - (maint_stats.results[loop.index0].stat.exists | default(false))
-      loop: "{{ app_facts.results }}"
-      loop_control:
-        label: "{{ item.ansible_facts.app_name }} (env={{ item.ansible_facts.app_env }})"
-
-    # ----- ACTION: TOGGLE -----
-    - name: Toggle maintenance ON→OFF / OFF→ON based on current state
-      shell: |
-        set -euo pipefail
-        cd "{{ item.ansible_facts.app_root }}"
-        if [[ "{{ maint_stats.results[loop.index0].stat.exists | default(false) }}" == "True" ]]; then
-          exec env PATH="{{ rbenv_path }}" bundle exec rake RAILS_ENV="{{ item.ansible_facts.app_env }}" maintenance:end
-        else
-          exec env PATH="{{ rbenv_path }}" bundle exec rake RAILS_ENV="{{ item.ansible_facts.app_env }}" maintenance:start
-        fi
-      args:
-        executable: /bin/bash
-      when: action == 'toggle'
-      loop: "{{ app_facts.results }}"
-      loop_control:
-        label: "{{ item.ansible_facts.app_name }} (env={{ item.ansible_facts.app_env }})"
-
-  post_tasks:
-    - name: Re-check maintenance file to report final state
-      stat:
-        path: "{{ item.ansible_facts.maintenance_file }}"
-      loop: "{{ app_facts.results }}"
-      loop_control:
-        label: "{{ item.ansible_facts.app_name }}"
-      register: maint_after
-
-    - name: Summary per app
+    - name: Show plan (target apps and operation)
       debug:
         msg: >-
-          {{ item.ansible_facts.app_name }} (env={{ item.ansible_facts.app_env }}):
-          maintenance={{ (maint_after.results[loop.index0].stat.exists | default(false)) | ternary('ON','OFF') }}
-      loop: "{{ app_facts.results }}"
+          Host {{ inventory_hostname }} → will apply '{{ op }}' to:
+          {{ resolved_apps | map('regex_replace','^',' - ') | list | join('\n') }}
+
+  tasks:
+    - name: Stat maintenance flag (per app)
+      stat:
+        path: "/home/deploy/{{ item }}/current/tmp/maintenance.yml"
+      loop: "{{ resolved_apps }}"
       loop_control:
-        label: "{{ item.ansible_facts.app_name }}"
+        label: "{{ item }}"
+      register: mflags
+
+    - name: Start maintenance (only when needed)  # op: on
+      command: /bin/bash -l -c 'cd /home/deploy/{{ item }}/current && bundle exec rake RAILS_ENV=production maintenance:start'
+      environment:
+        PATH: "{{ ruby_env_path }}"
+      loop: "{{ resolved_apps }}"
+      loop_control:
+        label: "{{ item }}"
+      when:
+        - op == 'on'
+        - not (mflags.results | selectattr('item','equalto',item) | map(attribute='stat.exists') | first | default(false))
+
+    - name: End maintenance (only when needed)    # op: off
+      command: /bin/bash -l -c 'cd /home/deploy/{{ item }}/current && bundle exec rake RAILS_ENV=production maintenance:end'
+      environment:
+        PATH: "{{ ruby_env_path }}"
+      loop: "{{ resolved_apps }}"
+      loop_control:
+        label: "{{ item }}"
+      when:
+        - op == 'off'
+        - (mflags.results | selectattr('item','equalto',item) | map(attribute='stat.exists') | first | default(false))
+
+    - name: Toggle maintenance (switch based on current flag)  # op: toggle
+      command: >-
+        /bin/bash -l -c 'cd /home/deploy/{{ item }}/current && bundle exec rake
+        RAILS_ENV=production maintenance:{{
+          (mflags.results | selectattr("item","equalto",item) | map(attribute="stat.exists") | first | default(false))
+          | ternary("end","start")
+        }}'
+      environment:
+        PATH: "{{ ruby_env_path }}"
+      loop: "{{ resolved_apps }}"
+      loop_control:
+        label: "{{ item }}"
+      when: op == 'toggle'
+
+    - name: Re-check maintenance flag after operation
+      stat:
+        path: "/home/deploy/{{ item }}/current/tmp/maintenance.yml"
+      loop: "{{ resolved_apps }}"
+      loop_control:
+        label: "{{ item }}"
+      register: mflags_after
+
+    - name: Summary per app (ON/OFF)
+      debug:
+        msg: >-
+          {{ item.item }} ({{ apps_catalog[item.item] | default(item.item) }}):
+          maintenance = {{
+            (item.stat.exists | default(false)) | ternary('ON','OFF')
+          }}
+      loop: "{{ mflags_after.results }}"
+      loop_control:
+        label: "{{ item.item }}"
