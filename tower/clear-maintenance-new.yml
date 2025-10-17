@@ -1,0 +1,60 @@
+---
+- name: Clean cached and log files on all app servers
+  hosts: app_servers
+  become: yes
+  gather_facts: no
+
+  vars:
+    apps:
+      - erp-accltd
+      - erp-bzidat
+      - erp-espdat
+      - erp-mxpdat
+      - erp-pwcdat
+      - erp-rdmdat
+      - erp-saldat
+    keep_logs_days: 14   # Cambia esto si quieres conservar más días de logs
+
+  tasks:
+    - name: Show target host and apps to be cleaned
+      debug:
+        msg: "Cleaning cache and logs on {{ inventory_hostname }} for {{ apps | join(', ') }}"
+
+    - name: Remove cached files (tmp/cache)
+      file:
+        path: "/home/deploy/{{ item }}/current/tmp/cache"
+        state: absent
+      loop: "{{ apps }}"
+      ignore_errors: yes
+      register: cache_cleanup
+
+    - name: Recreate cache directories
+      file:
+        path: "/home/deploy/{{ item }}/current/tmp/cache"
+        state: directory
+        owner: deploy
+        group: deploy
+        mode: '0755'
+      loop: "{{ apps }}"
+
+    - name: Remove old log files (older than {{ keep_logs_days }} days)
+      find:
+        paths: "/home/deploy/{{ item }}/current/log"
+        age: "{{ keep_logs_days }}d"
+        recurse: yes
+      loop: "{{ apps }}"
+      register: old_logs
+
+    - name: Delete found old log files
+      file:
+        path: "{{ item.path }}"
+        state: absent
+      with_items: "{{ old_logs.results | map(attribute='files') | flatten(levels=1) | list }}"
+      when: old_logs.results | length > 0
+      ignore_errors: yes
+
+    - name: Show cleanup summary
+      debug:
+        msg: >
+          Cache cleaned: {{ cache_cleanup.results | length }} apps,
+          Old logs removed: {{ old_logs.results | length }}
