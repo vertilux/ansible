@@ -1,0 +1,129 @@
+---
+- name: Toggle / set maintenance mode per company (survey-driven)
+  hosts: app_servers
+  become: yes
+  gather_facts: no
+
+  vars:
+    # Full catalog (used when survey selection is empty)
+    apps_all:
+      - erp-accltd
+      - erp-bzidat
+      - erp-espdat
+      - erp-mxpdat
+      - erp-pwcdat
+      - erp-rdmdat
+      - erp-saldat
+
+    # --- values provided by Survey ---
+    # action ∈ {on, off, toggle}
+    action: "{{ action | default('toggle') }}"
+    # multiple choice list from survey; may come as ["accltd","mxpdat", ...] or with "erp-" prefix
+    apps_selected: "{{ apps_selected | default([]) }}"
+
+    # Normalize selected apps; if nothing selected → all
+    apps: >-
+      {{ (apps_selected | length > 0)
+         | ternary(apps_selected | map('regex_replace', '^(?!erp-)', 'erp-') | list,
+                   apps_all) }}
+
+    # PATH to ensure rbenv shims and bundle are available non-interactively
+    rbenv_path: "/home/deploy/.rbenv/plugins/ruby-build/bin:/home/deploy/.rbenv/bin:/home/deploy/.rbenv/shims:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+  pre_tasks:
+    - name: Validate action choice
+      assert:
+        that:
+          - action in ['on', 'off', 'toggle']
+        fail_msg: "Invalid action '{{ action }}' (must be one of: on, off, toggle)."
+      tags: always
+
+    - name: Show plan (target apps and action)
+      debug:
+        msg: "Action={{ action }} → Apps={{ apps | join(', ') }}"
+      tags: always
+
+  tasks:
+    - name: Compute per-app paths and env
+      set_fact:
+        app_name: "{{ item }}"
+        app_env: "{{ (item | regex_replace('^erp-', '')) }}"
+        app_root: "/home/deploy/{{ item }}/current"
+        maintenance_file: "/home/deploy/{{ item }}/current/tmp/maintenance.yml"
+      loop: "{{ apps }}"
+      loop_control:
+        label: "{{ item }}"
+      register: app_facts
+
+    - name: Stat maintenance file for each app
+      stat:
+        path: "{{ item.ansible_facts.maintenance_file }}"
+      loop: "{{ app_facts.results }}"
+      loop_control:
+        label: "{{ item.ansible_facts.app_name }}"
+      register: maint_stats
+
+    # ----- ACTION: ON -----
+    - name: Enable maintenance (rake maintenance:start) when requested and currently OFF
+      shell: |
+        set -euo pipefail
+        cd "{{ item.ansible_facts.app_root }}"
+        exec env PATH="{{ rbenv_path }}" bundle exec rake RAILS_ENV="{{ item.ansible_facts.app_env }}" maintenance:start
+      args:
+        executable: /bin/bash
+      when:
+        - action == 'on'
+        - not (maint_stats.results[loop.index0].stat.exists | default(false))
+      loop: "{{ app_facts.results }}"
+      loop_control:
+        label: "{{ item.ansible_facts.app_name }} (env={{ item.ansible_facts.app_env }})"
+
+    # ----- ACTION: OFF -----
+    - name: Disable maintenance (rake maintenance:end) when requested and currently ON
+      shell: |
+        set -euo pipefail
+        cd "{{ item.ansible_facts.app_root }}"
+        exec env PATH="{{ rbenv_path }}" bundle exec rake RAILS_ENV="{{ item.ansible_facts.app_env }}" maintenance:end
+      args:
+        executable: /bin/bash
+      when:
+        - action == 'off'
+        - (maint_stats.results[loop.index0].stat.exists | default(false))
+      loop: "{{ app_facts.results }}"
+      loop_control:
+        label: "{{ item.ansible_facts.app_name }} (env={{ item.ansible_facts.app_env }})"
+
+    # ----- ACTION: TOGGLE -----
+    - name: Toggle maintenance ON→OFF / OFF→ON based on current state
+      shell: |
+        set -euo pipefail
+        cd "{{ item.ansible_facts.app_root }}"
+        if [[ "{{ maint_stats.results[loop.index0].stat.exists | default(false) }}" == "True" ]]; then
+          exec env PATH="{{ rbenv_path }}" bundle exec rake RAILS_ENV="{{ item.ansible_facts.app_env }}" maintenance:end
+        else
+          exec env PATH="{{ rbenv_path }}" bundle exec rake RAILS_ENV="{{ item.ansible_facts.app_env }}" maintenance:start
+        fi
+      args:
+        executable: /bin/bash
+      when: action == 'toggle'
+      loop: "{{ app_facts.results }}"
+      loop_control:
+        label: "{{ item.ansible_facts.app_name }} (env={{ item.ansible_facts.app_env }})"
+
+  post_tasks:
+    - name: Re-check maintenance file to report final state
+      stat:
+        path: "{{ item.ansible_facts.maintenance_file }}"
+      loop: "{{ app_facts.results }}"
+      loop_control:
+        label: "{{ item.ansible_facts.app_name }}"
+      register: maint_after
+
+    - name: Summary per app
+      debug:
+        msg: >-
+          {{ item.ansible_facts.app_name }} (env={{ item.ansible_facts.app_env }}):
+          maintenance={{ (maint_after.results[loop.index0].stat.exists | default(false)) | ternary('ON','OFF') }}
+      loop: "{{ app_facts.results }}"
+      loop_control:
+        label: "{{ item.ansible_facts.app_name }}"
