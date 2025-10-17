@@ -5,25 +5,25 @@
   gather_facts: no
 
   vars:
-    url: "https://erp.vertilux.com/"
-    timeout: 10          # segundos por intento
-    retries: 6           # total ~1 min
-    delay: 10            # pausa entre intentos
+    hc_url: "https://erp.vertilux.com/"
+    hc_timeout: 10     # seg por intento
+    hc_retries: 6      # total ~1 min
+    hc_delay: 10       # pausa entre intentos
 
   tasks:
-    - name: "HTTP GET {{ url }}"
+    - name: "HTTP GET {{ hc_url }}"
       uri:
-        url: "{{ url }}"
+        url: "{{ hc_url }}"
         method: GET
         status_code: 200
         return_content: no
         validate_certs: yes
-        timeout: "{{ timeout }}"
-      register: _resp
-      retries: "{{ retries }}"
-      delay: "{{ delay }}"
-      until: _resp is succeeded and _resp.status == 200
+        timeout: "{{ hc_timeout }}"
+      register: hc_resp
+      retries: "{{ hc_retries }}"
+      delay: "{{ hc_delay }}"
+      until: hc_resp is succeeded and hc_resp.status == 200
 
     - name: Show status
       debug:
-        msg: "ERP responded with HTTP {{ _resp.status }}"
+        msg: "ERP responded with HTTP {{ hc_resp.status }}"
