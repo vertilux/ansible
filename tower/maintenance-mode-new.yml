@@ -1,120 +1,129 @@
 ---
-- name: Toggle / set maintenance mode for one or more companies (survey-driven)
+- name: Toggle / set maintenance mode per company (survey-driven)
   hosts: app_servers
   become: yes
-  gather_facts: false
+  gather_facts: no
 
-  # Survey variables expected:
-  # - companies (Multiple choice, required): e.g. accltd, bzidat, espdat, mxpdat, pwcdat, rdmdat, saldat, covdat, prndat, wepdat
-  # - op        (Multiple choice, required): on | off | toggle
   vars:
+    # Full catalog (used when survey selection is empty)
+    apps_all:
+      - erp-accltd
+      - erp-bzidat
+      - erp-espdat
+      - erp-mxpdat
+      - erp-pwcdat
+      - erp-rdmdat
+      - erp-saldat
+
+    # --- values provided by Survey ---
+    # op ∈ {on, off, toggle}
+    op: "{{ op | default('toggle') }}"
+    # multiple choice list from survey; may come as ["accltd","mxpdat", ...] or with "erp-" prefix
+    apps_selected: "{{ apps_selected | default([]) }}"
+
+    # Normalize selected apps; if nothing selected → all
+    apps: >-
+      {{ (apps_selected | length > 0)
+         | ternary(apps_selected | map('regex_replace', '^(?!erp-)', 'erp-') | list,
+                   apps_all) }}
+
+    # PATH to ensure rbenv shims and bundle are available non-interactively
     rbenv_path: "/home/deploy/.rbenv/plugins/ruby-build/bin:/home/deploy/.rbenv/bin:/home/deploy/.rbenv/shims:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
   pre_tasks:
-    - name: Validate survey inputs
+    - name: Validate op choice
       assert:
         that:
-          - companies is defined
-          - companies | length > 0
-          - op is defined
-          - op in ['on','off','toggle']
-        fail_msg: "Survey must provide 'companies' (one or more codes) and 'op' in [on, off, toggle]."
+          - op in ['on', 'off', 'toggle']
+        fail_msg: "Invalid op '{{ op }}' (must be one of: on, off, toggle)."
+      tags: always
 
-    - name: Show plan
+    - name: Show plan (target apps and op)
       debug:
-        msg: "Host={{ inventory_hostname }} | op={{ op }} | Companies={{ companies | join(', ') }}"
+        msg: "op={{ op }} → Apps={{ apps | join(', ') }}"
+      tags: always
 
   tasks:
-    - name: Check if app exists on this host
-      stat:
-        path: "/home/deploy/erp-{{ app }}/current"
-      register: app_dir
-      loop: "{{ companies }}"
-      loop_control:
-        loop_var: app
-
-    - name: Read .rbenv-vars if present
-      slurp:
-        path: "/home/deploy/erp-{{ app }}/current/.rbenv-vars"
-      register: rbenv_vars_file
-      when: app_dir.results[loop.index0].stat.exists
-      ignore_errors: true
-      loop: "{{ companies }}"
-      loop_control:
-        loop_var: app
-
-    - name: Compute RAILS_ENV (prefer .rbenv-vars, fallback to company code)
+    - name: Compute per-app paths and env
       set_fact:
-        "rails_env_{{ app }}": >-
-          {{
-            ( (rbenv_vars_file.results[loop.index0].content | default('')) 
-              | b64decode 
-              | regex_search('(?m)^RAILS_ENV=(.+)$', '\1') )
-            | default(app)
-          }}
-      when: app_dir.results[loop.index0].stat.exists
-      loop: "{{ companies }}"
+        app_name: "{{ item }}"
+        app_env: "{{ (item | regex_replace('^erp-', '')) }}"
+        app_root: "/home/deploy/{{ item }}/current"
+        maintenance_file: "/home/deploy/{{ item }}/current/tmp/maintenance.yml"
+      loop: "{{ apps }}"
       loop_control:
-        loop_var: app
+        label: "{{ item }}"
+      register: app_facts
 
-    - name: Show effective RAILS_ENV
-      debug:
-        msg: "App erp-{{ app }} -> RAILS_ENV={{ hostvars[inventory_hostname]['rails_env_' ~ app] | default('n/a') }}"
-      when: app_dir.results[loop.index0].stat.exists
-      loop: "{{ companies }}"
-      loop_control:
-        loop_var: app
-
-    - name: Check current maintenance status file
+    - name: Stat maintenance file for each app
       stat:
-        path: "/home/deploy/erp-{{ app }}/current/tmp/maintenance.yml"
-      register: maint_stat
-      when: app_dir.results[loop.index0].stat.exists
-      loop: "{{ companies }}"
+        path: "{{ item.ansible_facts.maintenance_file }}"
+      loop: "{{ app_facts.results }}"
       loop_control:
-        loop_var: app
+        label: "{{ item.ansible_facts.app_name }}"
+      register: maint_stats
 
-    - name: Start maintenance if required
-      become_user: deploy
-      environment:
-        PATH: "{{ rbenv_path }}"
+    # ----- op: ON -----
+    - name: Enable maintenance (rake maintenance:start) when requested and currently OFF
+      shell: |
+        set -euo pipefail
+        cd "{{ item.ansible_facts.app_root }}"
+        exec env PATH="{{ rbenv_path }}" bundle exec rake RAILS_ENV="{{ item.ansible_facts.app_env }}" maintenance:start
       args:
-        chdir: "/home/deploy/erp-{{ app }}/current"
-      shell: >
-        /bin/bash -lc 'bundle exec rake RAILS_ENV={{ hostvars[inventory_hostname]["rails_env_" ~ app] | default(app) }} maintenance:start'
-      register: start_out
-      changed_when: "'invoke' in (start_out.stdout|default('')) or 'Executed' in (start_out.stdout|default(''))"
+        executable: /bin/bash
       when:
-        - app_dir.results[loop.index0].stat.exists
-        - (op == 'on') or (op == 'toggle' and not maint_stat.results[loop.index0].stat.exists)
-      loop: "{{ companies }}"
+        - op == 'on'
+        - not (maint_stats.results[loop.index0].stat.exists | default(false))
+      loop: "{{ app_facts.results }}"
       loop_control:
-        loop_var: app
+        label: "{{ item.ansible_facts.app_name }} (env={{ item.ansible_facts.app_env }})"
 
-    - name: End maintenance if required
-      become_user: deploy
-      environment:
-        PATH: "{{ rbenv_path }}"
+    # ----- op: OFF -----
+    - name: Disable maintenance (rake maintenance:end) when requested and currently ON
+      shell: |
+        set -euo pipefail
+        cd "{{ item.ansible_facts.app_root }}"
+        exec env PATH="{{ rbenv_path }}" bundle exec rake RAILS_ENV="{{ item.ansible_facts.app_env }}" maintenance:end
       args:
-        chdir: "/home/deploy/erp-{{ app }}/current"
-      shell: >
-        /bin/bash -lc 'bundle exec rake RAILS_ENV={{ hostvars[inventory_hostname]["rails_env_" ~ app] | default(app) }} maintenance:end'
-      register: end_out
-      changed_when: "'invoke' in (end_out.stdout|default('')) or 'Executed' in (end_out.stdout|default(''))"
+        executable: /bin/bash
       when:
-        - app_dir.results[loop.index0].stat.exists
-        - (op == 'off') or (op == 'toggle' and maint_stat.results[loop.index0].stat.exists)
-      loop: "{{ companies }}"
+        - op == 'off'
+        - (maint_stats.results[loop.index0].stat.exists | default(false))
+      loop: "{{ app_facts.results }}"
       loop_control:
-        loop_var: app
+        label: "{{ item.ansible_facts.app_name }} (env={{ item.ansible_facts.app_env }})"
 
-    - name: Report per-app result
+    # ----- op: TOGGLE -----
+    - name: Toggle maintenance ON→OFF / OFF→ON based on current state
+      shell: |
+        set -euo pipefail
+        cd "{{ item.ansible_facts.app_root }}"
+        if [[ "{{ maint_stats.results[loop.index0].stat.exists | default(false) }}" == "True" ]]; then
+          exec env PATH="{{ rbenv_path }}" bundle exec rake RAILS_ENV="{{ item.ansible_facts.app_env }}" maintenance:end
+        else
+          exec env PATH="{{ rbenv_path }}" bundle exec rake RAILS_ENV="{{ item.ansible_facts.app_env }}" maintenance:start
+        fi
+      args:
+        executable: /bin/bash
+      when: op == 'toggle'
+      loop: "{{ app_facts.results }}"
+      loop_control:
+        label: "{{ item.ansible_facts.app_name }} (env={{ item.ansible_facts.app_env }})"
+
+  post_tasks:
+    - name: Re-check maintenance file to report final state
+      stat:
+        path: "{{ item.ansible_facts.maintenance_file }}"
+      loop: "{{ app_facts.results }}"
+      loop_control:
+        label: "{{ item.ansible_facts.app_name }}"
+      register: maint_after
+
+    - name: Summary per app
       debug:
         msg: >-
-          erp-{{ app }} on {{ inventory_hostname }} |
-          present={{ app_dir.results[loop.index0].stat.exists }} |
-          maintenance file existed before={{ (maint_stat.results[loop.index0].stat.exists if maint_stat.results is defined else 'n/a') }} |
-          op={{ op }}
-      loop: "{{ companies }}"
+          {{ item.ansible_facts.app_name }} (env={{ item.ansible_facts.app_env }}):
+          maintenance={{ (maint_after.results[loop.index0].stat.exists | default(false)) | ternary('ON','OFF') }}
+      loop: "{{ app_facts.results }}"
       loop_control:
-        loop_var: app
+        label: "{{ item.ansible_facts.app_name }}"
