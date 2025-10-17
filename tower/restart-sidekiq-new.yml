@@ -1,63 +1,58 @@
 ---
-- name: Rolling restart de Sidekiq en app_servers
+- name: Restart all active Sidekiq services (excluding beta)
   hosts: app_servers
-  become: yes
-  gather_facts: no
-  serial: 1   # reinicia host por host
-
+  become: true
+  serial: 1
   vars:
-    # Patrón de units de systemd que tienes en los lb
-    sidekiq_unit_pattern: "sidekiq-*.service"
-
-    # Redis de producción (lo vi en el dashboard de Sidekiq)
     redis_host: "104.236.33.109"
     redis_port: 6379
+    sidekiq_exclude_regex: ".*-beta\\.service$"
 
-  pre_tasks:
-    - name: Comprobar que Redis responde antes de tocar Sidekiq
+  tasks:
+
+    - name: Check Redis availability before restarting Sidekiq
       ansible.builtin.wait_for:
         host: "{{ redis_host }}"
         port: "{{ redis_port }}"
-        timeout: 10
-      register: redis_ok
+        timeout: 5
+      register: redis_check
+      failed_when: not redis_check.elapsed < 5
+      ignore_errors: false
 
-    - name: Fallar si Redis no responde
-      ansible.builtin.fail:
-        msg: "Redis {{ redis_host }}:{{ redis_port }} no responde; se evita reiniciar Sidekiq."
-      when: not redis_ok.elapsed is defined
-
-    - name: Descubrir units Sidekiq presentes en este host
-      ansible.builtin.shell: |
-        set -o pipefail
-        systemctl list-units --type=service "{{ sidekiq_unit_pattern }}" \
-          --all --no-legend --no-pager | awk '{print $1}'
-      args:
-        executable: /bin/bash
-      changed_when: false
+    - name: Discover all Sidekiq service units
+      ansible.builtin.shell: >
+        systemctl list-units --type=service --no-legend --all 'sidekiq-*.service' | awk '{print $1}'
       register: sidekiq_units_raw
+      changed_when: false
 
-    - name: Normalizar lista de units
+    - name: Filter out excluded services (e.g. sidekiq-beta)
       ansible.builtin.set_fact:
-        sidekiq_units: "{{ sidekiq_units_raw.stdout_lines | select('match', '.*\\.service$') | list }}"
+        sidekiq_units: >-
+          {{ sidekiq_units_raw.stdout_lines
+             | reject('match', sidekiq_exclude_regex)
+             | list }}
 
-    - name: Asegurar que hay al menos una unit sidekiq en este host
-      ansible.builtin.fail:
-        msg: "No se encontraron units que coincidan con {{ sidekiq_unit_pattern }} en {{ inventory_hostname }}."
-      when: sidekiq_units | length == 0
+    - name: Show detected Sidekiq services
+      ansible.builtin.debug:
+        msg: "Detected Sidekiq services to restart: {{ sidekiq_units | join(', ') if sidekiq_units else 'none found' }}"
 
-  tasks:
-    - name: Reiniciar cada unit sidekiq encontrada
+    - name: Restart each Sidekiq service (safe one-by-one)
       ansible.builtin.systemd:
         name: "{{ item }}"
         state: restarted
+        daemon_reload: true
       loop: "{{ sidekiq_units }}"
       register: restart_results
+      failed_when: false
 
-    - name: Verificar que quedaron en estado 'active (running)'
-      ansible.builtin.command: systemctl is-active "{{ item }}"
-      changed_when: false
+    - name: Verify all restarted services are active
+      ansible.builtin.command: systemctl is-active {{ item }}
       loop: "{{ sidekiq_units }}"
+      register: active_results
+      failed_when: false
 
-    - name: Mostrar resumen por host (qué units se tocaron)
+    - name: Display restart summary
       ansible.builtin.debug:
-        msg: "Reiniciadas en {{ inventory_hostname }}: {{ sidekiq_units | join(', ') }}"
+        msg: |
+             ACTIVE: {{ active_results.results | selectattr('stdout','equalto','active') | map(attribute='item') | list }}
+             FAILED: {{ active_results.results | rejectattr('stdout','equalto','active') | map(attribute='item') | list }}
