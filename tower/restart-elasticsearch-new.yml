@@ -1,6 +1,6 @@
 ---
 - name: Restart Elasticsearch on legacy host
-  hosts: production_db
+  hosts: database
   become: yes
   gather_facts: no
 
