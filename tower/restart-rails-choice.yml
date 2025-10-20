@@ -8,58 +8,20 @@
     app_root: /home/deploy
     app_prefix: erp
 
-    # Catálogo completo (sin el prefijo "erp-")
-    apps_all:
-      - accltd
-      - bzidat
-      - espdat
-      - mxpdat
-      - pwcdat
-      - rdmdat
-      - saldat
-      - covdat
-      - prndat
-      - wepdat
+    # Nombre EXACTO que debes usar en el Survey (Multiple Choice - multiple)
+    # Ej.: accltd, bzidat, espdat, mxpdat, pwcdat, rdmdat, saldat, covdat, prndat, wepdat
+    apps_selected: "{{ apps_selected | default([]) }}"
+
+    # Normaliza por si alguien incluye el prefijo "erp-"
+    apps: "{{ apps_selected | map('regex_replace', '^erp-', '') | list }}"
 
   pre_tasks:
-    # 1) Capturamos lo que venga del Survey (puede no existir)
-    - name: Capture survey value if provided
-      set_fact:
-        survey_apps_raw: "{{ apps_selected }}"
-      when: apps_selected is defined
-
-    # 2) Si NO vino nada, dejamos lista vacía
-    - name: Default to empty list when no survey value
-      set_fact:
-        apps_selected_list: []
-      when: survey_apps_raw is not defined
-
-    # 3) Si vino una secuencia (multi-select real), normalizamos quitando 'erp-' y espacios
-    - name: Normalize survey (sequence -> list without prefix)
-      set_fact:
-        apps_selected_list: >-
-          {{ survey_apps_raw | list
-             | map('regex_replace', '^erp-', '')
-             | map('trim')
-             | list }}
-      when: survey_apps_raw is defined and survey_apps_raw is sequence
-
-    # 4) Si vino como texto (CSV), lo partimos y normalizamos
-    - name: Normalize survey (CSV string -> list without prefix)
-      set_fact:
-        apps_selected_list: >-
-          {{ (survey_apps_raw | string)
-             | replace(' ', '')
-             | split(',')
-             | map('regex_replace', '^erp-', '')
-             | reject('equalto','')
-             | list }}
-      when: survey_apps_raw is defined and survey_apps_raw is not sequence
-
-    # 5) Lista final a usar: si no eligieron nada, usamos todas
-    - name: Compute final app list
-      set_fact:
-        apps: "{{ (apps_selected_list | length > 0) | ternary(apps_selected_list, apps_all) }}"
+    - name: Validate survey selection
+      assert:
+        that:
+          - apps_selected is sequence
+          - apps_selected | length > 0
+        fail_msg: "Survey must provide at least one company in 'apps_selected'."
 
     - name: Show target host and chosen apps
       debug:
