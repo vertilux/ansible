@@ -13,6 +13,9 @@
       - erp-pwcdat
       - erp-rdmdat
       - erp-saldat
+      - erp-covdat
+      - erp-prndat
+      - erp-wepdat
     # usa este nombre exacto en el Survey
     op: "{{ op | default('toggle') }}"
     apps_selected: "{{ apps_selected | default([]) }}"
