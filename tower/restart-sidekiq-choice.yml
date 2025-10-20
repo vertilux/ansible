@@ -1,1 +1,93 @@
+---
+- name: Restart selected Sidekiq services (excluding beta)
+  hosts: app_servers
+  become: true
+  gather_facts: false
+  serial: 1
 
+  vars:
+    # --- Survey variable (Multiple Choice - multiple) ---
+    # Usa EXACTAMENTE este nombre en el Survey:
+    #   apps_selected  -> opciones: accltd, bzidat, espdat, mxpdat, pwcdat, rdmdat, saldat, covdat, prndat, wepdat
+    apps_selected: "{{ apps_selected | default([]) }}"
+
+    # Redis health-check (igual que tu job global)
+    redis_host: "104.236.33.109"
+    redis_port: 6379
+
+    # Excluir siempre cualquier servicio '...-beta.service'
+    sidekiq_exclude_regex: ".*-beta\\.service$"
+
+  pre_tasks:
+    - name: Validate survey selection
+      assert:
+        that:
+          - apps_selected is sequence
+          - apps_selected | length > 0
+        fail_msg: "Survey must provide at least one company in 'apps_selected'."
+
+    - name: Normalize selected company codes (strip optional 'erp-' prefix)
+      set_fact:
+        _apps_norm: "{{ apps_selected | map('regex_replace', '^erp-', '') | list }}"
+
+    - name: Build regex for selected Sidekiq units
+      set_fact:
+        selected_unit_regex: "{{ '^sidekiq-(' ~ (_apps_norm | join('|')) ~ ')\\.service$' }}"
+
+    - name: Show plan (selected companies and unit regex)
+      debug:
+        msg: "Selected companies={{ _apps_norm | join(', ') }} | unit_regex={{ selected_unit_regex }}"
+
+  tasks:
+    - name: Check Redis availability before restarting Sidekiq
+      ansible.builtin.wait_for:
+        host: "{{ redis_host }}"
+        port: "{{ redis_port }}"
+        timeout: 5
+      register: redis_check
+      failed_when: not redis_check.elapsed < 5
+
+    - name: Discover all Sidekiq service units
+      ansible.builtin.shell: >
+        systemctl list-units --type=service --no-legend --all 'sidekiq-*.service' | awk '{print $1}'
+      register: sidekiq_units_raw
+      changed_when: false
+
+    - name: Filter by selection and exclude-beta
+      ansible.builtin.set_fact:
+        sidekiq_units: >-
+          {{
+            sidekiq_units_raw.stdout_lines
+            | reject('match', sidekiq_exclude_regex)
+            | select('match', selected_unit_regex)
+            | list
+          }}
+
+    - name: Show detected Sidekiq services to restart on this host
+      ansible.builtin.debug:
+        msg: >-
+          Host {{ inventory_hostname }} → {{ (sidekiq_units | length) | ternary(
+              'units: ' ~ (sidekiq_units | join(', ')),
+              'no matching units on this host'
+            ) }}
+
+    - name: Restart each Sidekiq service (safe one-by-one)
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        state: restarted
+        daemon_reload: true
+      loop: "{{ sidekiq_units }}"
+      register: restart_results
+      failed_when: false
+
+    - name: Verify services are active
+      ansible.builtin.command: systemctl is-active {{ item }}
+      loop: "{{ sidekiq_units }}"
+      register: active_results
+      failed_when: false
+
+    - name: Display restart summary
+      ansible.builtin.debug:
+        msg: |
+          ACTIVE: {{ active_results.results | selectattr('stdout','equalto','active') | map(attribute='item') | list }}
+          FAILED: {{ active_results.results | rejectattr('stdout','equalto','active') | map(attribute='item') | list }}
