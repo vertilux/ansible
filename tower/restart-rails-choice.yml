@@ -1,0 +1,109 @@
+---
+- name: Restart selected Rails apps (Passenger) by touching restart.txt
+  hosts: app_servers
+  become: yes
+  gather_facts: no
+
+  vars:
+    app_root: /home/deploy
+    app_prefix: erp
+
+    # Full catalog (used when nothing is selected in the survey)
+    apps_all:
+      - accltd
+      - bzidat
+      - espdat
+      - mxpdat
+      - pwcdat
+      - rdmdat
+      - saldat
+      - covdat
+      - prndat
+      - wepdat
+
+    # === Survey variables ===
+    # Multiple-choice list. Accept values either "accltd" or "erp-accltd".
+    apps_selected: "{{ apps_selected | default([]) }}"
+
+    # Normalize: if empty -> use all; strip any 'erp-' prefix
+    apps: >-
+      {{
+        (apps_selected | length > 0)
+        | ternary(
+            apps_selected | map('regex_replace', '^erp-', '') | list,
+            apps_all
+          )
+      }}
+
+  pre_tasks:
+    - name: Show target host and chosen apps
+      debug:
+        msg: "Host {{ inventory_hostname }} → will restart: {{ apps | join(', ') }}"
+
+  tasks:
+    # Build per-app facts we’ll use later
+    - name: Build app facts (paths per app)
+      set_fact:
+        app_name: "{{ app_prefix }}-{{ item }}"
+        app_root_path: "{{ app_root }}/{{ app_prefix }}-{{ item }}/current"
+        tmp_dir: "{{ app_root }}/{{ app_prefix }}-{{ item }}/current/tmp"
+        restart_file: "{{ app_root }}/{{ app_prefix }}-{{ item }}/current/tmp/restart.txt"
+      loop: "{{ apps }}"
+      loop_control:
+        label: "{{ app_prefix }}-{{ item }}"
+      register: app_facts
+
+    - name: Check if each app exists on this host
+      stat:
+        path: "{{ item.ansible_facts.app_root_path }}"
+      loop: "{{ app_facts.results }}"
+      loop_control:
+        label: "{{ item.ansible_facts.app_name }}"
+      register: app_exists
+
+    - name: Ensure Passenger tmp dir exists (for existing apps only)
+      file:
+        path: "{{ item.ansible_facts.tmp_dir }}"
+        state: directory
+        owner: deploy
+        group: deploy
+        mode: "0775"
+      when: app_exists.results[loop.index0].stat.exists | default(false)
+      loop: "{{ app_facts.results }}"
+      loop_control:
+        label: "{{ item.ansible_facts.app_name }}"
+      tags: [ensure_tmp]
+
+    - name: Touch restart.txt (Passenger rolling restart) where app exists
+      become_user: deploy
+      file:
+        path: "{{ item.ansible_facts.restart_file }}"
+        state: touch
+        modification_time: preserve
+        access_time: preserve
+      when: app_exists.results[loop.index0].stat.exists | default(false)
+      loop: "{{ app_facts.results }}"
+      loop_control:
+        label: "{{ item.ansible_facts.app_name }}"
+      register: passenger_touch
+      tags: [restart]
+
+    - name: Report apps that were not present on this host (skipped)
+      debug:
+        msg: "Skipping {{ item.ansible_facts.app_name }} (not present on {{ inventory_hostname }})"
+      when: not (app_exists.results[loop.index0].stat.exists | default(false))
+      loop: "{{ app_facts.results }}"
+      loop_control:
+        label: "{{ item.ansible_facts.app_name }}"
+
+    - name: Summary per host
+      debug:
+        msg: >-
+          Passenger restart touched for: {{
+            passenger_touch.results
+            | selectattr('skipped', 'defined')
+            | rejectattr('skipped')           # keep only executed items
+            | map(attribute='item.ansible_facts.app_name')
+            | list | default([])
+            | join(', ')
+          }}
