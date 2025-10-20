@@ -8,7 +8,7 @@
     app_root: /home/deploy
     app_prefix: erp
 
-    # Full catalog (without "erp-" prefix)
+    # Catálogo completo (sin el prefijo "erp-")
     apps_all:
       - accltd
       - bzidat
@@ -21,36 +21,51 @@
       - prndat
       - wepdat
 
-    # ---- Survey variable (do NOT redefine with itself) ----
-    # AWX Survey field name: apps_selected
-    # It can arrive as a list (['erp-accltd','espdat']) or a comma string ("accltd, espdat")
-    survey_apps_raw: "{{ apps_selected | default(omit) }}"
+  pre_tasks:
+    # 1) Capturamos lo que venga del Survey (puede no existir)
+    - name: Capture survey value if provided
+      set_fact:
+        survey_apps_raw: "{{ apps_selected }}"
+      when: apps_selected is defined
 
-    # Normalize survey to a clean list without prefix
-    apps_selected_list: >-
-      {%- if survey_apps_raw is not defined -%}
-      []
-      {%- elif survey_apps_raw is sequence -%}
-      {{ survey_apps_raw | list
-         | map('regex_replace', '^erp-', '')
-         | map('trim')
-         | list }}
-      {%- else -%}
-      {{ survey_apps_raw | string
-         | regex_replace('\\s+', '')         # remove spaces
-         | split(',')                        # split CSV
-         | map('regex_replace', '^erp-', '')
-         | reject('equalto','') | list }}
-      {%- endif -%}
+    # 2) Si NO vino nada, dejamos lista vacía
+    - name: Default to empty list when no survey value
+      set_fact:
+        apps_selected_list: []
+      when: survey_apps_raw is not defined
 
-    # Final target list (no prefix). If nothing selected → all.
-    apps: "{{ (apps_selected_list | length > 0) | ternary(apps_selected_list, apps_all) }}"
+    # 3) Si vino una secuencia (multi-select real), normalizamos quitando 'erp-' y espacios
+    - name: Normalize survey (sequence -> list without prefix)
+      set_fact:
+        apps_selected_list: >-
+          {{ survey_apps_raw | list
+             | map('regex_replace', '^erp-', '')
+             | map('trim')
+             | list }}
+      when: survey_apps_raw is defined and survey_apps_raw is sequence
 
-  tasks:
+    # 4) Si vino como texto (CSV), lo partimos y normalizamos
+    - name: Normalize survey (CSV string -> list without prefix)
+      set_fact:
+        apps_selected_list: >-
+          {{ (survey_apps_raw | string)
+             | replace(' ', '')
+             | split(',')
+             | map('regex_replace', '^erp-', '')
+             | reject('equalto','')
+             | list }}
+      when: survey_apps_raw is defined and survey_apps_raw is not sequence
+
+    # 5) Lista final a usar: si no eligieron nada, usamos todas
+    - name: Compute final app list
+      set_fact:
+        apps: "{{ (apps_selected_list | length > 0) | ternary(apps_selected_list, apps_all) }}"
+
     - name: Show target host and chosen apps
       debug:
         msg: "Host {{ inventory_hostname }} → will restart: {{ apps | join(', ') }}"
 
+  tasks:
     - name: Ensure Passenger tmp dir exists (per app)
       file:
         path: "{{ app_root }}/{{ app_prefix }}-{{ item }}/current/tmp"
