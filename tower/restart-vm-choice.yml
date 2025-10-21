@@ -1,0 +1,89 @@
+---
+- name: Restart selected Proxmox VMs by role (e.g., granite)
+  hosts: all
+  gather_facts: false
+  become: false
+
+  vars:
+    target_role: "{{ target_role | default('granite') }}"
+    vm_list: "{{ vm_list | default([]) }}"
+    wait_rdp: "{{ wait_rdp | default('no') }}"
+    wait_timeout: "{{ (wait_timeout | default(180)) | int }}"
+
+  pre_tasks:
+    - name: Build list of available VMs with the selected role
+      set_fact:
+        role_vms: >-
+          {{
+            proxmox_vms | dict2items
+            | selectattr('value.role', 'defined')
+            | selectattr('value.role', 'equalto', target_role)
+            | map(attribute='key') | list
+          }}
+
+    - name: Ensure there are VMs with role={{ target_role }}
+      assert:
+        that:
+          - role_vms | length > 0
+        fail_msg: "No VMs found with role='{{ target_role }}' in proxmox_vms."
+
+    - name: If survey left empty, use all VMs with that role
+      set_fact:
+        vm_list: "{{ vm_list | length > 0 | ternary(vm_list, role_vms) }}"
+
+    - name: Show selected VMs and role
+      debug:
+        msg: >-
+          Role={{ target_role }} → Selected VMs={{ vm_list | join(', ') }}
+
+  tasks:
+    - name: Soft reboot VM on its Proxmox node (qm reboot)
+      vars:
+        _vm: "{{ proxmox_vms[item] }}"
+      delegate_to: "{{ _vm.pve_node }}"
+      become: true
+      shell: |
+        set -euo pipefail
+        qm status {{ _vm.vmid }} >/dev/null 2>&1 || { echo "VMID {{ _vm.vmid }} not found"; exit 1; }
+        qm reboot {{ _vm.vmid }}
+      loop: "{{ vm_list }}"
+      loop_control:
+        label: "{{ proxmox_vms[item].name }} (vmid={{ proxmox_vms[item].vmid }}, node={{ proxmox_vms[item].pve_node }})"
+
+    - name: Wait until VM is running again
+      vars:
+        _vm: "{{ proxmox_vms[item] }}"
+      delegate_to: "{{ _vm.pve_node }}"
+      become: true
+      register: _wait_state
+      retries: 30
+      delay: 5
+      until: "'running' in _wait_state.stdout"
+      changed_when: false
+      shell: |
+        qm status {{ _vm.vmid }} | awk '{print tolower($0)}'
+      loop: "{{ vm_list }}"
+      loop_control:
+        label: "{{ proxmox_vms[item].name }}"
+
+    - name: Optionally wait for RDP (3389) if IP is defined
+      vars:
+        _vm: "{{ proxmox_vms[item] }}"
+      wait_for:
+        host: "{{ _vm.ip }}"
+        port: 3389
+        timeout: "{{ wait_timeout }}"
+        state: started
+      when:
+        - wait_rdp | lower == 'yes'
+        - _vm.ip is defined
+        - _vm.ip | length > 0
+      loop: "{{ vm_list }}"
+      loop_control:
+        label: "{{ proxmox_vms[item].name }}"
+
+    - name: Summary
+      debug:
+        msg: >-
+          Reboot completed for role={{ target_role }} →
+          {{ vm_list | map('extract', proxmox_vms) | map(attribute='name') | join(', ') }}
