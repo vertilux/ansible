@@ -14,14 +14,13 @@
     reboot_timeout: "{{ reboot_timeout | default(120) | int }}"
 
   pre_tasks:
-    - name: Normalize user list (CSV -> list, trimmed)
-      set_fact:
-        vm_keys_list: >-
-          {{
-            vm_keys | string
-                    | regex_replace('\\s+', '')
-                    | ternary(vm_keys | string | regex_replace('\\s+','') | split(','), [])
-          }}
+    - name: Normalize user list (supports list or CSV)
+  set_fact:
+    vm_keys_list: >-
+      {{
+        vm_keys if vm_keys is sequence
+        else (vm_keys | string | regex_replace('\\s+','') | split(','))
+      }}
 
     - name: Decide if this host is candidate by role
       set_fact:
