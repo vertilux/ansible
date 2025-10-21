@@ -4,89 +4,89 @@
   gather_facts: no
 
   vars:
-    # === Survey variable ===
-    # vm_keys: lista múltiple (ej.: ["gr_miami","vx1", ...])
-    vm_keys: "{{ vm_keys | default([]) }}"
-    delay_between: 120   # segundos de espera entre cada VM
+    # === Survey fields ===
+    # vm_keys: Multiple Choice (multiple) -> lista o CSV
+    vm_keys: "{{ vm_keys | default('') }}"
+    delay_between: "{{ (delay_between | default(120)) | int }}"
 
   tasks:
+    # --- ubicar variables del inventario ---
     - name: Locate proxmox_vms dict anywhere in inventory
       set_fact:
-        _proxmox_vms: "{{ hostvars | dict2items | map(attribute='value') | selectattr('proxmox_vms','defined') | map(attribute='proxmox_vms') | list | first }}"
+        _proxmox_vms: >-
+          {{ hostvars | dict2items
+             | map(attribute='value')
+             | selectattr('proxmox_vms','defined')
+             | map(attribute='proxmox_vms')
+             | list | first }}
 
     - name: Locate pve_nodes map anywhere in inventory
       set_fact:
-        _pve_nodes: "{{ hostvars | dict2items | map(attribute='value') | selectattr('pve_nodes','defined') | map(attribute='pve_nodes') | list | first }}"
+        _pve_nodes: >-
+          {{ hostvars | dict2items
+             | map(attribute='value')
+             | selectattr('pve_nodes','defined')
+             | map(attribute='pve_nodes')
+             | list | first }}
 
     - name: Sanity check inventory variables were found
       assert:
         that:
           - _proxmox_vms is mapping
           - _pve_nodes is mapping
-        fail_msg: "Inventory must define 'proxmox_vms' and 'pve_nodes' (put them in Inventory → Variables or group_vars/all.yml)."
+        fail_msg: "Inventory must define 'proxmox_vms' and 'pve_nodes' in Inventory → Variables."
 
     - name: Build list of all known VM keys
       set_fact:
         _all_vm_keys: "{{ _proxmox_vms | dict2items | map(attribute='key') | list | sort }}"
 
+    # --- normalizar input del survey ---
+    - name: Normalize survey vm_keys to a list
+      set_fact:
+        _vm_keys_list: >-
+          {% if vm_keys is sequence and (vm_keys is not string) %}
+          {{ vm_keys | list }}
+          {% else %}
+          {{ (vm_keys | string)
+              | regex_replace('\\s+', '')  | split(',')
+              | reject('equalto','') | list }}
+          {% endif %}
+
+    - name: Show what the Survey sent
+      debug:
+        msg:
+          survey_raw: "{{ vm_keys }}"
+          normalized_list: "{{ _vm_keys_list }}"
+          all_keys_available: "{{ _all_vm_keys }}"
+          delay_between_seconds: "{{ delay_between }}"
+
+    # --- validaciones claras ---
     - name: Validate survey selection (not empty, not all, and valid keys)
       assert:
         that:
-          - vm_keys is sequence
-          - vm_keys | length > 0
-          - vm_keys | difference(_all_vm_keys) | length == 0
-          - vm_keys | length < _all_vm_keys | length
+          - _vm_keys_list | length > 0
+          - (_vm_keys_list | difference(_all_vm_keys)) | length == 0
+          - _vm_keys_list | length < _all_vm_keys | length
         fail_msg: >-
-          Survey must provide at least one VM in 'vm_keys', all must exist,
-          and you cannot select ALL at once.
+          Invalid selection:
+          - Must choose at least one VM.
+          - All selected keys must exist in inventory.
+          - You cannot select ALL VMs at once.
+          unknown={{ _vm_keys_list | difference(_all_vm_keys) }}
+          selected={{ _vm_keys_list }}
+          available={{ _all_vm_keys }}
 
-    - name: Build execution plan (vmid, node, node_ip, guest_ip)
-      set_fact:
-        _plan: >-
-          {{
-            vm_keys
-            | map('extract', _proxmox_vms)     # each value dict
-            | zip(vm_keys)                     # pair with key
-            | map('community.general.dict_kv', 'value','key')  # normalize fields
-            | map('combine', {'name': item.key}) | list
-          }}
-      vars:
-        item: "{{ item }}"
-      loop: "{{ vm_keys }}"
-      loop_control: { label: "{{ item }}" }
-      register: _tmp_ignore
-      changed_when: false
-
-    - name: Normalize plan fields
-      set_fact:
-        selected_vms: >-
-          {{
-            vm_keys | map('extract', _proxmox_vms) | zip(vm_keys) | list
-            | map('first') | list
-            | range(0, vm_keys|length) | list
-            | list
-          }}
-      changed_when: false
-
-    - name: Final plan objects
-      set_fact:
-        selected_vms: >-
-          {{
-            vm_keys | map('extract', _proxmox_vms) | list
-            | zip(vm_keys)
-            | map('community.general.dict_merge', [{'k':'key'}])
-          }}
-      changed_when: false
-
-    - name: Rebuild plan (clean)
+    # --- plan de ejecución ---
+    - name: Build execution plan
       set_fact:
         plan: >-
           {{
-            vm_keys
-            | map('extract', _proxmox_vms)
-            | zip(vm_keys)
-            | map('community.general.dict_merge', [{'k':'name'}])
+            _vm_keys_list
+            | map('extract', _proxmox_vms)         # valores (dict)
+            | zip(_vm_keys_list)                   # (valor, key)
+            | map('list') | list
             | map('combine', {
+                'name': item.1,
                 'vmid': item.0.vmid,
                 'pve_node': item.0.pve_node,
                 'node_ip': _pve_nodes[item.0.pve_node],
@@ -94,40 +94,34 @@
               })
             | list
           }}
-      vars:
-        item: "{{ item }}"
-      loop: "{{ vm_keys | map('extract', _proxmox_vms) | zip(vm_keys) | list }}"
+      vars: { item: "{{ item }}" }
+      loop: "{{ _vm_keys_list }}"
       changed_when: false
 
     - name: Show plan
       debug:
         msg: >-
-          Will restart (one by one, {{ delay_between }}s gap):
-          {{
-            plan | map(attribute='name') | list
-          }}
+          Will restart (one by one, wait {{ delay_between }}s):
+          {{ plan | map(attribute='name') | list }}
 
-    # ---- Restart sequence, one-by-one ----
+    # --- pre-check ---
     - name: Pre-check status (qm status)
       delegate_to: "{{ item.node_ip }}"
-      become: false
-      ansible.builtin.command: "qm status {{ item.vmid }}"
+      command: "qm status {{ item.vmid }}"
       register: pre_status
       changed_when: false
       loop: "{{ plan }}"
-      loop_control:
-        label: "{{ item.name }} (vmid={{ item.vmid }}, node={{ item.pve_node }})"
+      loop_control: { label: "{{ item.name }} (vmid={{ item.vmid }}, node={{ item.pve_node }})" }
 
-    - name: Attempt soft reboot first; fallback to shutdown/start
+    # --- reinicio ---
+    - name: Reboot VM (soft reboot, fallback to shutdown/start)
       delegate_to: "{{ item.node_ip }}"
-      become: false
-      ansible.builtin.shell: |
+      shell: |
         set -e
         if qm reboot {{ item.vmid }}; then
           exit 0
         else
           qm shutdown {{ item.vmid }} --timeout 60 || true
-          # wait until stopped
           for i in $(seq 1 30); do
             state="$(qm status {{ item.vmid }} | awk '{print $2}')"
             [ "$state" = "stopped" ] && break
@@ -135,43 +129,36 @@
           done
           qm start {{ item.vmid }}
         fi
-      args:
-        executable: /bin/bash
+      args: { executable: /bin/bash }
       register: reboot_cmd
       changed_when: true
       loop: "{{ plan }}"
-      loop_control:
-        label: "{{ item.name }} (vmid={{ item.vmid }}, node={{ item.pve_node }})"
+      loop_control: { label: "{{ item.name }} (vmid={{ item.vmid }}, node={{ item.pve_node }})" }
 
+    # --- pausa entre VMs ---
     - name: Wait {{ delay_between }} seconds between VMs
-      ansible.builtin.wait_for:
+      wait_for:
         timeout: "{{ delay_between }}"
       loop: "{{ plan }}"
-      loop_control:
-        label: "pause after {{ item.name }}"
+      loop_control: { label: "pause after {{ item.name }}" }
       changed_when: false
 
+    # --- post-check ---
     - name: Post-check status (expect 'running')
       delegate_to: "{{ item.node_ip }}"
-      become: false
-      ansible.builtin.shell: |
+      shell: |
         state="$(qm status {{ item.vmid }} | awk '{print $2}')"
         echo "$state"
         [ "$state" = "running" ]
-      args:
-        executable: /bin/bash
+      args: { executable: /bin/bash }
       register: post_status
       retries: 10
       delay: 6
       until: post_status.rc == 0
       changed_when: false
       loop: "{{ plan }}"
-      loop_control:
-        label: "{{ item.name }} (vmid={{ item.vmid }})"
+      loop_control: { label: "{{ item.name }} (vmid={{ item.vmid }})" }
 
     - name: Summary
       debug:
-        msg: >-
-          Restarted: {{
-            plan | map(attribute='name') | list
-          }}
+        msg: "Restarted: {{ plan | map(attribute='name') | list }}"
