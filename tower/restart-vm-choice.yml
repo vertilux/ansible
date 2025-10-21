@@ -1,15 +1,15 @@
 ---
-# tower/restart-vm-choice.yml
 - name: Restart selected Proxmox VMs (via SSH to PVE nodes)
   hosts: localhost
   gather_facts: false
 
   vars:
-    # Debe venir del Survey (multiple choice)
+    # Debe venir del Survey (Multiple Choice - multiple)
     vm_keys_selected: "{{ vm_keys_selected | default([]) }}"
-    pause_seconds: 120  # 2 minutos entre VMs
+    pause_seconds: 120
 
   pre_tasks:
+    # 1) Buscar los dicts en el inventario (group_vars:all.yml del inventario "Hosts")
     - name: Locate proxmox_vms dict anywhere in inventory
       set_fact:
         proxmox_vms_all: >-
@@ -39,12 +39,14 @@
       set_fact:
         all_vm_keys: "{{ proxmox_vms_all | dict2items | map(attribute='key') | list | sort }}"
 
-    - name: Show what the Survey sent
+    # 2) Mostrar lo que mandó el Survey
+    - name: Show Survey payload and valid keys
       debug:
         msg: |
-          Survey selection (vm_keys_selected) = {{ (vm_keys_selected | default([])) | join(', ') if vm_keys_selected|length > 0 else 'EMPTY' }}
-          Valid keys = {{ all_vm_keys | join(', ') }}
+          vm_keys_selected = {{ vm_keys_selected | default([]) }}
+          valid keys       = {{ all_vm_keys }}
 
+    # 3) Validar selección
     - name: Validate survey selection (not empty, not all, valid keys)
       assert:
         that:
@@ -53,24 +55,40 @@
           - vm_keys_selected | length < all_vm_keys | length
           - (vm_keys_selected | difference(all_vm_keys)) | length == 0
         fail_msg: >-
-          Invalid selection. You must choose SOME (not all) of these keys:
+          Invalid selection. Choose SOME (not all) of these keys:
           {{ all_vm_keys | join(', ') }}
 
-    - name: Build selected VM objects (key + value)
+    # 4) Construir objetos seleccionados {key, value:{vmid,pve_node,...}}
+    - name: Build selected VM objects
       set_fact:
         selected_vms: >-
           {{
-            proxmox_vms_all | dict2items | selectattr('key','in', vm_keys_selected) | list
+            proxmox_vms_all
+            | dict2items
+            | selectattr('key','in', vm_keys_selected)
+            | list
           }}
 
-    - name: Show execution plan
+    - name: Ensure selected_vms is not empty (defensive)
+      assert:
+        that:
+          - selected_vms | length > 0
+        fail_msg: "Nothing to do: selected_vms resolved empty."
+
+    - name: Show execution plan (what will be rebooted)
       debug:
-        msg: |-
-          Will reboot (with {{ pause_seconds }}s pause between each):
-          {{ selected_vms | map(attribute='key') | join(', ') }}
+        var: selected_vms
+
+    # (opcional) Probar reachability de los nodos PVE a los que vamos a delegar
+    - name: Test SSH reachability to needed PVE nodes
+      command: /bin/true
+      delegate_to: "{{ pve_nodes_all[item] }}"
+      loop: "{{ selected_vms | map(attribute='value.pve_node') | list | unique }}"
+      loop_control:
+        label: "{{ item }} -> {{ pve_nodes_all[item] }}"
 
   tasks:
-    - name: Reboot VM on its PVE node (SSH port 22; NOT using 8006)
+    - name: Reboot VM on its PVE node (SSH port 22; not 8006)
       delegate_to: "{{ pve_nodes_all[item.value.pve_node] }}"
       become: true
       vars:
@@ -85,7 +103,7 @@
       loop_control:
         label: "{{ item.key }} -> {{ item.value.pve_node }} (vmid={{ item.value.vmid }})"
 
-    - name: Pause between VMs
+    - name: Pause {{ pause_seconds }}s between VMs
       pause:
         seconds: "{{ pause_seconds }}"
       loop: "{{ selected_vms }}"
