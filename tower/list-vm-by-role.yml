@@ -1,11 +1,11 @@
 ---
 - name: List VM keys for a given role (uses Survey)
-  hosts: pve              # para cargar group_vars/pve.yml donde está proxmox_vms
+  hosts: pve
   gather_facts: false
   run_once: true
 
   vars:
-    # lo pides por Survey o Prompt on launch con este nombre
+    # Survey: text o multiple-choice (ej: granite, ts, etc.)
     target_role: "{{ target_role | default('granite') }}"
 
   tasks:
@@ -22,10 +22,9 @@
             | list | sort
           }}
 
-    - name: Show keys for role={{ target_role }}
+    # OPCIÓN A: salida “linda”, una por línea
+    - name: Pretty list (one per line)
       delegate_to: localhost
       debug:
-        msg: |-
-          {{ (_vm_keys_by_role | length > 0)
-              | ternary(_vm_keys_by_role | join('\n'),
-                        'No VMs found for role=' ~ target_role) }}
+        msg: "{{ item }}"
+      loop: "{{ _vm_keys_by_role }}"
