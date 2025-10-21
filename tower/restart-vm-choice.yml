@@ -1,111 +1,177 @@
 ---
 - name: Restart selected Proxmox VMs (via SSH to PVE nodes)
   hosts: localhost
-  gather_facts: false
+  gather_facts: no
 
   vars:
-    # Debe venir del Survey (Multiple Choice - multiple)
-    vm_keys_selected: "{{ vm_keys_selected | default([]) }}"
-    pause_seconds: 120
+    # === Survey variable ===
+    # vm_keys: lista múltiple (ej.: ["gr_miami","vx1", ...])
+    vm_keys: "{{ vm_keys | default([]) }}"
+    delay_between: 120   # segundos de espera entre cada VM
 
-  pre_tasks:
-    # 1) Buscar los dicts en el inventario (group_vars:all.yml del inventario "Hosts")
+  tasks:
     - name: Locate proxmox_vms dict anywhere in inventory
       set_fact:
-        proxmox_vms_all: >-
-          {{
-            hostvars | dict2items
-            | map(attribute='value.proxmox_vms')
-            | select('defined') | list | first | default({})
-          }}
+        _proxmox_vms: "{{ hostvars | dict2items | map(attribute='value') | selectattr('proxmox_vms','defined') | map(attribute='proxmox_vms') | list | first }}"
 
     - name: Locate pve_nodes map anywhere in inventory
       set_fact:
-        pve_nodes_all: >-
-          {{
-            hostvars | dict2items
-            | map(attribute='value.pve_nodes')
-            | select('defined') | list | first | default({})
-          }}
+        _pve_nodes: "{{ hostvars | dict2items | map(attribute='value') | selectattr('pve_nodes','defined') | map(attribute='pve_nodes') | list | first }}"
 
     - name: Sanity check inventory variables were found
       assert:
         that:
-          - proxmox_vms_all | length > 0
-          - pve_nodes_all   | length > 0
-        fail_msg: "Inventory is missing proxmox_vms and/or pve_nodes."
+          - _proxmox_vms is mapping
+          - _pve_nodes is mapping
+        fail_msg: "Inventory must define 'proxmox_vms' and 'pve_nodes' (put them in Inventory → Variables or group_vars/all.yml)."
 
     - name: Build list of all known VM keys
       set_fact:
-        all_vm_keys: "{{ proxmox_vms_all | dict2items | map(attribute='key') | list | sort }}"
+        _all_vm_keys: "{{ _proxmox_vms | dict2items | map(attribute='key') | list | sort }}"
 
-    # 2) Mostrar lo que mandó el Survey
-    - name: Show Survey payload and valid keys
-      debug:
-        msg: |
-          vm_keys_selected = {{ vm_keys_selected | default([]) }}
-          valid keys       = {{ all_vm_keys }}
-
-    # 3) Validar selección
-    - name: Validate survey selection (not empty, not all, valid keys)
+    - name: Validate survey selection (not empty, not all, and valid keys)
       assert:
         that:
-          - vm_keys_selected is sequence
-          - vm_keys_selected | length > 0
-          - vm_keys_selected | length < all_vm_keys | length
-          - (vm_keys_selected | difference(all_vm_keys)) | length == 0
+          - vm_keys is sequence
+          - vm_keys | length > 0
+          - vm_keys | difference(_all_vm_keys) | length == 0
+          - vm_keys | length < _all_vm_keys | length
         fail_msg: >-
-          Invalid selection. Choose SOME (not all) of these keys:
-          {{ all_vm_keys | join(', ') }}
+          Survey must provide at least one VM in 'vm_keys', all must exist,
+          and you cannot select ALL at once.
 
-    # 4) Construir objetos seleccionados {key, value:{vmid,pve_node,...}}
-    - name: Build selected VM objects
+    - name: Build execution plan (vmid, node, node_ip, guest_ip)
+      set_fact:
+        _plan: >-
+          {{
+            vm_keys
+            | map('extract', _proxmox_vms)     # each value dict
+            | zip(vm_keys)                     # pair with key
+            | map('community.general.dict_kv', 'value','key')  # normalize fields
+            | map('combine', {'name': item.key}) | list
+          }}
+      vars:
+        item: "{{ item }}"
+      loop: "{{ vm_keys }}"
+      loop_control: { label: "{{ item }}" }
+      register: _tmp_ignore
+      changed_when: false
+
+    - name: Normalize plan fields
       set_fact:
         selected_vms: >-
           {{
-            proxmox_vms_all
-            | dict2items
-            | selectattr('key','in', vm_keys_selected)
+            vm_keys | map('extract', _proxmox_vms) | zip(vm_keys) | list
+            | map('first') | list
+            | range(0, vm_keys|length) | list
             | list
           }}
+      changed_when: false
 
-    - name: Ensure selected_vms is not empty (defensive)
-      assert:
-        that:
-          - selected_vms | length > 0
-        fail_msg: "Nothing to do: selected_vms resolved empty."
+    - name: Final plan objects
+      set_fact:
+        selected_vms: >-
+          {{
+            vm_keys | map('extract', _proxmox_vms) | list
+            | zip(vm_keys)
+            | map('community.general.dict_merge', [{'k':'key'}])
+          }}
+      changed_when: false
 
-    - name: Show execution plan (what will be rebooted)
-      debug:
-        var: selected_vms
-
-    # (opcional) Probar reachability de los nodos PVE a los que vamos a delegar
-    - name: Test SSH reachability to needed PVE nodes
-      command: /bin/true
-      delegate_to: "{{ pve_nodes_all[item] }}"
-      loop: "{{ selected_vms | map(attribute='value.pve_node') | list | unique }}"
-      loop_control:
-        label: "{{ item }} -> {{ pve_nodes_all[item] }}"
-
-  tasks:
-    - name: Reboot VM on its PVE node (SSH port 22; not 8006)
-      delegate_to: "{{ pve_nodes_all[item.value.pve_node] }}"
-      become: true
+    - name: Rebuild plan (clean)
+      set_fact:
+        plan: >-
+          {{
+            vm_keys
+            | map('extract', _proxmox_vms)
+            | zip(vm_keys)
+            | map('community.general.dict_merge', [{'k':'name'}])
+            | map('combine', {
+                'vmid': item.0.vmid,
+                'pve_node': item.0.pve_node,
+                'node_ip': _pve_nodes[item.0.pve_node],
+                'guest_ip': item.0.ip
+              })
+            | list
+          }}
       vars:
-        vmid: "{{ item.value.vmid }}"
-        vm_name: "{{ item.key }}"
-        pve_node: "{{ item.value.pve_node }}"
-      shell: |
-        set -euo pipefail
-        echo "Rebooting {{ vm_name }} (vmid={{ vmid }}) on {{ pve_node }}..."
-        qm reboot {{ vmid }}
-      loop: "{{ selected_vms }}"
-      loop_control:
-        label: "{{ item.key }} -> {{ item.value.pve_node }} (vmid={{ item.value.vmid }})"
+        item: "{{ item }}"
+      loop: "{{ vm_keys | map('extract', _proxmox_vms) | zip(vm_keys) | list }}"
+      changed_when: false
 
-    - name: Pause {{ pause_seconds }}s between VMs
-      pause:
-        seconds: "{{ pause_seconds }}"
-      loop: "{{ selected_vms }}"
+    - name: Show plan
+      debug:
+        msg: >-
+          Will restart (one by one, {{ delay_between }}s gap):
+          {{
+            plan | map(attribute='name') | list
+          }}
+
+    # ---- Restart sequence, one-by-one ----
+    - name: Pre-check status (qm status)
+      delegate_to: "{{ item.node_ip }}"
+      become: false
+      ansible.builtin.command: "qm status {{ item.vmid }}"
+      register: pre_status
+      changed_when: false
+      loop: "{{ plan }}"
       loop_control:
-        label: "{{ item.key }}"
+        label: "{{ item.name }} (vmid={{ item.vmid }}, node={{ item.pve_node }})"
+
+    - name: Attempt soft reboot first; fallback to shutdown/start
+      delegate_to: "{{ item.node_ip }}"
+      become: false
+      ansible.builtin.shell: |
+        set -e
+        if qm reboot {{ item.vmid }}; then
+          exit 0
+        else
+          qm shutdown {{ item.vmid }} --timeout 60 || true
+          # wait until stopped
+          for i in $(seq 1 30); do
+            state="$(qm status {{ item.vmid }} | awk '{print $2}')"
+            [ "$state" = "stopped" ] && break
+            sleep 2
+          done
+          qm start {{ item.vmid }}
+        fi
+      args:
+        executable: /bin/bash
+      register: reboot_cmd
+      changed_when: true
+      loop: "{{ plan }}"
+      loop_control:
+        label: "{{ item.name }} (vmid={{ item.vmid }}, node={{ item.pve_node }})"
+
+    - name: Wait {{ delay_between }} seconds between VMs
+      ansible.builtin.wait_for:
+        timeout: "{{ delay_between }}"
+      loop: "{{ plan }}"
+      loop_control:
+        label: "pause after {{ item.name }}"
+      changed_when: false
+
+    - name: Post-check status (expect 'running')
+      delegate_to: "{{ item.node_ip }}"
+      become: false
+      ansible.builtin.shell: |
+        state="$(qm status {{ item.vmid }} | awk '{print $2}')"
+        echo "$state"
+        [ "$state" = "running" ]
+      args:
+        executable: /bin/bash
+      register: post_status
+      retries: 10
+      delay: 6
+      until: post_status.rc == 0
+      changed_when: false
+      loop: "{{ plan }}"
+      loop_control:
+        label: "{{ item.name }} (vmid={{ item.vmid }})"
+
+    - name: Summary
+      debug:
+        msg: >-
+          Restarted: {{
+            plan | map(attribute='name') | list
+          }}
