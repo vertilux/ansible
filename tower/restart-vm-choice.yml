@@ -1,73 +1,54 @@
 ---
-- name: Reboot Proxmox VMs by role (via SSH)
-  hosts: pve
-  gather_facts: false
-  run_once: true
+- name: Reboot VMs by role (optionally pick specific VMs)
+  hosts: vms
+  become: yes
+  gather_facts: no
 
   vars:
-    # Survey
-    target_role: "{{ target_role | default('granite') }}"   # role a reiniciar
-    max_parallel: "{{ max_parallel | default(2) }}"         # VMs en paralelo
-    shutdown_timeout: "{{ shutdown_timeout | default(120) }}"  # seg
+    # === Survey vars ===
+    # target_role: (choice) granite, ts, ...
+    # vm_keys: (optional CSV) hostnames/keys (as aparecen en el inventario) para limitar dentro del role
+    # reboot_timeout: (int) segundos para esperar que vuelva
+    target_role: "{{ target_role }}"
+    vm_keys: "{{ vm_keys | default('') }}"
+    reboot_timeout: "{{ reboot_timeout | default(120) | int }}"
 
-  tasks:
-    - name: Build VM list for role={{ target_role }}
-      delegate_to: localhost
+  pre_tasks:
+    - name: Normalize user list (CSV -> list, trimmed)
       set_fact:
-        _vm_keys: >-
+        vm_keys_list: >-
           {{
-            proxmox_vms
-            | dict2items
-            | selectattr('value.role','defined')
-            | selectattr('value.role','equalto', target_role)
-            | map(attribute='key')
-            | list | sort
+            vm_keys | string
+                    | regex_replace('\\s+', '')
+                    | ternary(vm_keys | string | regex_replace('\\s+','') | split(','), [])
           }}
 
-    - name: Expand VM objects (id, host/node, ip…)
-      delegate_to: localhost
+    - name: Decide if this host is candidate by role
       set_fact:
-        _vms: "{{ _vm_keys | map('extract', proxmox_vms) | list }}"
+        _role_match: "{{ (hostvars[inventory_hostname].role | default('')) == target_role }}"
 
-    - name: Show plan
-      delegate_to: localhost
+    - name: If user specified vm_keys, check membership
+      set_fact:
+        _key_match: "{{ (vm_keys_list | length == 0) or (inventory_hostname in vm_keys_list) }}"
+      when: _role_match
+
+    - name: Show plan (first host only)
       debug:
-        msg: |
-          Role: {{ target_role }}
-          Count: {{ _vms | length }}
-          VMs:
-          {%- for k in _vm_keys -%}
-            - {{ k }} (id={{ proxmox_vms[k].id }}, node={{ proxmox_vms[k].host }}, ip={{ proxmox_vms[k].ip | default('n/a') }})
-          {%- endfor %}
+        msg: >
+          Role={{ target_role }} | User list={{ vm_keys_list | default([]) }}
+          -> Will reboot only hosts where role matches and (if provided) name ∈ list.
+      run_once: true
 
-    - name: Reboot VMs on their owning Proxmox node
-      throttle: "{{ max_parallel | int }}"
-      block:
-        - name: Soft shutdown (qm shutdown) {{ item.name | default(item.key) }} (id={{ item.id }})
-          delegate_to: "{{ pve_nodes[item.host] | default(item.host) }}"
-          become: true
-          command: "qm shutdown {{ item.id }} --timeout {{ shutdown_timeout }}"
-          register: _shutdown
-          failed_when: false
+  tasks:
+    - name: Skip hosts that do not match filters
+      meta: end_host
+      when: not (_role_match | default(false)) or not (_key_match | default(true))
 
-        - name: Force stop if still running
-          delegate_to: "{{ pve_nodes[item.host] | default(item.host) }}"
-          become: true
-          command: "qm stop {{ item.id }}"
-          when: _shutdown.rc != 0
+    - name: Reboot host (graceful)
+      ansible.builtin.reboot:
+        reboot_timeout: "{{ reboot_timeout }}"
+      register: rb
 
-        - name: Start VM
-          delegate_to: "{{ pve_nodes[item.host] | default(item.host) }}"
-          become: true
-          command: "qm start {{ item.id }}"
-
-        - name: (Optional) Wait for SSH to come up
-          delegate_to: localhost
-          wait_for:
-            host: "{{ item.ip }}"
-            port: 22
-            timeout: 120
-          when: item.ip is defined
-      loop: "{{ _vm_keys | map('extract', proxmox_vms) | list }}"
-      loop_control:
-        label: "{{ item.name | default(item.key) }}"
+    - name: Report reboot result
+      debug:
+        msg: "Rebooted {{ inventory_hostname }} (role={{ target_role }}) in ~{{ rb.elapsed | default('?') }}s"
