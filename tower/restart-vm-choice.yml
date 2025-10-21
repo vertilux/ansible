@@ -4,37 +4,28 @@
   hosts: localhost
   gather_facts: false
 
-  # Espera recibir esto desde el Survey (Multiple Choice)
   vars:
+    # Debe venir del Survey (multiple choice)
     vm_keys_selected: "{{ vm_keys_selected | default([]) }}"
     pause_seconds: 120  # 2 minutos entre VMs
 
   pre_tasks:
-    # === Traer proxmox_vms y pve_nodes desde cualquier host del inventario ===
     - name: Locate proxmox_vms dict anywhere in inventory
       set_fact:
         proxmox_vms_all: >-
           {{
-            hostvars
-            | dict2items
+            hostvars | dict2items
             | map(attribute='value.proxmox_vms')
-            | select('defined')
-            | list
-            | first
-            | default({})
+            | select('defined') | list | first | default({})
           }}
 
     - name: Locate pve_nodes map anywhere in inventory
       set_fact:
         pve_nodes_all: >-
           {{
-            hostvars
-            | dict2items
+            hostvars | dict2items
             | map(attribute='value.pve_nodes')
-            | select('defined')
-            | list
-            | first
-            | default({})
+            | select('defined') | list | first | default({})
           }}
 
     - name: Sanity check inventory variables were found
@@ -42,15 +33,19 @@
         that:
           - proxmox_vms_all | length > 0
           - pve_nodes_all   | length > 0
-        fail_msg: >-
-          Could not find 'proxmox_vms' and/or 'pve_nodes' in inventory.
-          Please ensure they are present in group/host/inventory vars.
+        fail_msg: "Inventory is missing proxmox_vms and/or pve_nodes."
 
     - name: Build list of all known VM keys
       set_fact:
         all_vm_keys: "{{ proxmox_vms_all | dict2items | map(attribute='key') | list | sort }}"
 
-    - name: Validate survey selection (not empty, not all, and valid keys)
+    - name: Show what the Survey sent
+      debug:
+        msg: |
+          Survey selection (vm_keys_selected) = {{ (vm_keys_selected | default([])) | join(', ') if vm_keys_selected|length > 0 else 'EMPTY' }}
+          Valid keys = {{ all_vm_keys | join(', ') }}
+
+    - name: Validate survey selection (not empty, not all, valid keys)
       assert:
         that:
           - vm_keys_selected is sequence
@@ -58,17 +53,14 @@
           - vm_keys_selected | length < all_vm_keys | length
           - (vm_keys_selected | difference(all_vm_keys)) | length == 0
         fail_msg: >-
-          Invalid selection. Choose at least one VM, not all, and only from:
+          Invalid selection. You must choose SOME (not all) of these keys:
           {{ all_vm_keys | join(', ') }}
 
     - name: Build selected VM objects (key + value)
       set_fact:
         selected_vms: >-
           {{
-            proxmox_vms_all
-            | dict2items
-            | selectattr('key','in', vm_keys_selected)
-            | list
+            proxmox_vms_all | dict2items | selectattr('key','in', vm_keys_selected) | list
           }}
 
     - name: Show execution plan
@@ -78,14 +70,14 @@
           {{ selected_vms | map(attribute='key') | join(', ') }}
 
   tasks:
-    - name: Reboot VM gracefully on its PVE node
+    - name: Reboot VM on its PVE node (SSH port 22; NOT using 8006)
       delegate_to: "{{ pve_nodes_all[item.value.pve_node] }}"
       become: true
       vars:
         vmid: "{{ item.value.vmid }}"
         vm_name: "{{ item.key }}"
         pve_node: "{{ item.value.pve_node }}"
-      ansible.builtin.shell: |
+      shell: |
         set -euo pipefail
         echo "Rebooting {{ vm_name }} (vmid={{ vmid }}) on {{ pve_node }}..."
         qm reboot {{ vmid }}
@@ -94,7 +86,7 @@
         label: "{{ item.key }} -> {{ item.value.pve_node }} (vmid={{ item.value.vmid }})"
 
     - name: Pause between VMs
-      ansible.builtin.pause:
+      pause:
         seconds: "{{ pause_seconds }}"
       loop: "{{ selected_vms }}"
       loop_control:
