@@ -1,0 +1,63 @@
+---
+# tower/restart-vm-choice.yml
+- name: Restart selected Proxmox VMs (via SSH to PVE nodes)
+  hosts: localhost
+  gather_facts: false
+
+  # Espera recibir vm_keys_selected desde el Survey (multiple choice)
+  vars:
+    vm_keys_selected: "{{ vm_keys_selected | default([]) }}"
+    pause_seconds: 120  # 2 minutes between reboots
+
+  pre_tasks:
+    - name: Build list of all known VM keys (from group_vars inventory)
+      set_fact:
+        all_vm_keys: "{{ proxmox_vms | dict2items | map(attribute='key') | list | sort }}"
+
+    - name: Validate survey selection (not empty, not all, and all keys exist)
+      assert:
+        that:
+          - vm_keys_selected is sequence
+          - vm_keys_selected | length > 0
+          - vm_keys_selected | length < all_vm_keys | length   # never all at once
+          - (vm_keys_selected | difference(all_vm_keys)) | length == 0
+        fail_msg: >-
+          Invalid selection. Choose at least one VM, not all, and only from:
+          {{ all_vm_keys | join(', ') }}
+
+    - name: Build selected VM objects (key + value)
+      set_fact:
+        selected_vms: >-
+          {{ proxmox_vms
+             | dict2items
+             | selectattr('key','in', vm_keys_selected)
+             | list }}
+
+    - name: Show execution plan
+      debug:
+        msg: |-
+          Will reboot (with {{ pause_seconds }}s pause between each):
+          {{ selected_vms | map(attribute='key') | join(', ') }}
+
+  tasks:
+    - name: Reboot VM gracefully on its PVE node
+      delegate_to: "{{ pve_nodes[item.value.pve_node] }}"
+      become: true
+      vars:
+        vmid: "{{ item.value.vmid }}"
+        vm_name: "{{ item.key }}"
+        pve_node: "{{ item.value.pve_node }}"
+      ansible.builtin.shell: |
+        set -euo pipefail
+        echo "Rebooting {{ vm_name }} (vmid={{ vmid }}) on {{ pve_node }}..."
+        qm reboot {{ vmid }}
+      loop: "{{ selected_vms }}"
+      loop_control:
+        label: "{{ item.key }} -> {{ item.value.pve_node }} (vmid={{ item.value.vmid }})"
+
+    - name: Pause between VMs (to avoid rebooting many at once)
+      ansible.builtin.pause:
+        seconds: "{{ pause_seconds }}"
+      loop: "{{ selected_vms }}"
+      loop_control:
+        label: "{{ item.key }}"
