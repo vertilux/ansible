@@ -1,22 +1,30 @@
 ---
 - name: List VM keys for a given role (uses Survey)
-  hosts: pve            # así cargamos las group_vars del grupo pve
+  hosts: pve                  # así cargamos group_vars/pve.yml con proxmox_vms
   gather_facts: false
-  run_once: true        # se ejecuta una sola vez
+  run_once: true
+
   vars:
-    # lo setea el Survey; aquí solo damos un respaldo por si acaso
     target_role: "{{ target_role | default('granite') }}"
 
   tasks:
-    - name: Show keys for role={{ target_role }}
+    - name: Collect keys for role={{ target_role }}
       delegate_to: localhost
-      debug:
-        msg: >-
+      set_fact:
+        _vm_keys_by_role: >-
           {{
             proxmox_vms
             | dict2items
+            | selectattr('value.role','defined')              # <-- evita el error
             | selectattr('value.role','equalto', target_role)
             | map(attribute='key')
             | list | sort
-            | join('\n')
           }}
+
+    - name: Show keys for role={{ target_role }}
+      delegate_to: localhost
+      debug:
+        msg: |-
+          {{ (_vm_keys_by_role | length > 0)
+              | ternary(_vm_keys_by_role | join('\n'),
+                        'No VMs found for role=' ~ target_role) }}
