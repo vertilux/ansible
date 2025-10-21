@@ -1,10 +1,11 @@
 ---
 - name: List VM keys for a given role (uses Survey)
-  hosts: pve                  # así cargamos group_vars/pve.yml con proxmox_vms
+  hosts: pve              # para cargar group_vars/pve.yml donde está proxmox_vms
   gather_facts: false
   run_once: true
 
   vars:
+    # lo pides por Survey o Prompt on launch con este nombre
     target_role: "{{ target_role | default('granite') }}"
 
   tasks:
@@ -15,7 +16,7 @@
           {{
             proxmox_vms
             | dict2items
-            | selectattr('value.role','defined')              # <-- evita el error
+            | selectattr('value.role','defined')
             | selectattr('value.role','equalto', target_role)
             | map(attribute='key')
             | list | sort
