@@ -5,13 +5,8 @@
   gather_facts: no
 
   vars:
-    # --- CARGA DE VARIABLES ---
-    # Usamos un host fijo del grupo 'pve' para asegurar la carga de las variables de grupo.
-    # Asumimos que 'pve20' existe en el inventario.
-    pve_group_vars: "{{ hostvars['pve20'] }}" 
-    vms_data: "{{ pve_group_vars.proxmox_vms }}"
-    pve_nodes: "{{ pve_group_vars.pve_nodes }}"
-
+    # Las variables de datos (vms_data, pve_nodes) se inyectan desde el Job Template (Extra Variables).
+    
     # --- DATOS DE LA VM SELECCIONADA ---
     vm_details: "{{ vms_data[vm_to_restart | lower] }}"
     vm_vmid: "{{ vm_details.vmid }}"
@@ -19,22 +14,21 @@
     vm_os: "{{ vm_details.os | lower }}"
 
     # --- DETALLE DE CONEXIÓN ---
-    # Obtenemos la IP real del nodo PVE para el 'delegate_to' (es la forma más segura)
+    # Obtenemos la IP real del nodo PVE para el 'delegate_to'
     pve_host_ip: "{{ pve_nodes[vm_pve_node_name] }}"
     
   tasks:
     - name: 1. Confirmar la VM y el nodo de destino
       debug:
-        msg: "VM: {{ vm_to_restart }} (ID: {{ vm_vmid }}). El comando se delegará al nodo PVE: {{ vm_pve_node_name }} ({{ pve_host_ip }})"
+        msg: "VM: {{ vm_to_restart }} (ID: {{ vm_vmid }}). Delegando comando SSH al nodo PVE: {{ vm_pve_node_name }} ({{ pve_host_ip }})"
+      run_once: true
 
     - name: 2. Reiniciar la VM usando 'qm reboot'
       ansible.builtin.command: "qm reboot {{ vm_vmid }}"
-      # DELEGACIÓN CLAVE: Ejecuta el comando en el nodo PVE correcto.
+      # DELEGACIÓN CLAVE: Ejecuta el comando en la IP específica del nodo PVE.
       delegate_to: "{{ pve_host_ip }}"
-      # Indicamos a Ansible que use el usuario de administrador para la conexión SSH remota.
-      # Usará el password de la Credencial Machine de AWX.
-      delegate_facts: yes
       vars:
+        # La Credencial Machine debe ser la del usuario 'administrator'.
         ansible_user: administrator 
         
     - name: 3. Esperar 2 minutos (120 segundos) después del reinicio de Windows
