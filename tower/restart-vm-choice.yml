@@ -1,164 +1,28 @@
 ---
-- name: Restart selected Proxmox VMs (via SSH to PVE nodes)
-  hosts: localhost
+- name: Reiniciar una VM de Proxmox usando comandos qm y Credencial SSH
+  # Ejecutamos en el nodo PVE donde se encuentra la VM, NO en el AWX (localhost)
+  hosts: '{{ vm_to_restart | lower }}_host'
+  connection: ssh
+  become: yes # Asegura que se use el usuario root
   gather_facts: no
 
   vars:
-    # === Survey fields ===
-    # vm_keys: Multiple Choice (multiple) -> lista o CSV
-    vm_keys: "{{ vm_keys | default('') }}"
-    delay_between: "{{ (delay_between | default(120)) | int }}"
+    # Obtener el ID de la VM
+    vm_vmid: "{{ hostvars[inventory_hostname]['proxmox_vms'][vm_to_restart | lower]['vmid'] }}"
+    # Obtener el OS de la VM para la lógica de retardo
+    vm_os: "{{ hostvars[inventory_hostname]['proxmox_vms'][vm_to_restart | lower]['os'] | lower }}"
 
   tasks:
-    # --- ubicar variables del inventario ---
-    - name: Locate proxmox_vms dict anywhere in inventory
-      set_fact:
-        _proxmox_vms: >-
-          {{ hostvars | dict2items
-             | map(attribute='value')
-             | selectattr('proxmox_vms','defined')
-             | map(attribute='proxmox_vms')
-             | list | first }}
-
-    - name: Locate pve_nodes map anywhere in inventory
-      set_fact:
-        _pve_nodes: >-
-          {{ hostvars | dict2items
-             | map(attribute='value')
-             | selectattr('pve_nodes','defined')
-             | map(attribute='pve_nodes')
-             | list | first }}
-
-    - name: Sanity check inventory variables were found
-      assert:
-        that:
-          - _proxmox_vms is mapping
-          - _pve_nodes is mapping
-        fail_msg: "Inventory must define 'proxmox_vms' and 'pve_nodes' in Inventory → Variables."
-
-    - name: Build list of all known VM keys
-      set_fact:
-        _all_vm_keys: "{{ _proxmox_vms | dict2items | map(attribute='key') | list | sort }}"
-
-    # --- normalizar input del survey ---
-    - name: Normalize survey vm_keys to a list
-      set_fact:
-        _vm_keys_list: >-
-          {% if vm_keys is sequence and (vm_keys is not string) %}
-          {{ vm_keys | list }}
-          {% else %}
-          {{ (vm_keys | string)
-              | regex_replace('\\s+', '')  | split(',')
-              | reject('equalto','') | list }}
-          {% endif %}
-
-    - name: Show what the Survey sent
+    - name: Determinar el Host Proxmox y la VM
       debug:
-        msg:
-          survey_raw: "{{ vm_keys }}"
-          normalized_list: "{{ _vm_keys_list }}"
-          all_keys_available: "{{ _all_vm_keys }}"
-          delay_between_seconds: "{{ delay_between }}"
+        msg: "Conectándose al host: {{ inventory_hostname }}. Reiniciando VM (ID: {{ vm_vmid }})"
+      run_once: yes
 
-    # --- validaciones claras ---
-    - name: Validate survey selection (not empty, not all, and valid keys)
-      assert:
-        that:
-          - _vm_keys_list | length > 0
-          - (_vm_keys_list | difference(_all_vm_keys)) | length == 0
-          - _vm_keys_list | length < _all_vm_keys | length
-        fail_msg: >-
-          Invalid selection:
-          - Must choose at least one VM.
-          - All selected keys must exist in inventory.
-          - You cannot select ALL VMs at once.
-          unknown={{ _vm_keys_list | difference(_all_vm_keys) }}
-          selected={{ _vm_keys_list }}
-          available={{ _all_vm_keys }}
+    - name: Reiniciar la VM usando 'qm reboot'
+      ansible.builtin.command: "qm reboot {{ vm_vmid }}"
+      # Nota: qm reboot intenta un apagado elegante, si falla usa el parámetro '--force'
 
-    # --- plan de ejecución ---
-    - name: Build execution plan
-      set_fact:
-        plan: >-
-          {{
-            _vm_keys_list
-            | map('extract', _proxmox_vms)         # valores (dict)
-            | zip(_vm_keys_list)                   # (valor, key)
-            | map('list') | list
-            | map('combine', {
-                'name': item.1,
-                'vmid': item.0.vmid,
-                'pve_node': item.0.pve_node,
-                'node_ip': _pve_nodes[item.0.pve_node],
-                'guest_ip': item.0.ip
-              })
-            | list
-          }}
-      vars: { item: "{{ item }}" }
-      loop: "{{ _vm_keys_list }}"
-      changed_when: false
-
-    - name: Show plan
-      debug:
-        msg: >-
-          Will restart (one by one, wait {{ delay_between }}s):
-          {{ plan | map(attribute='name') | list }}
-
-    # --- pre-check ---
-    - name: Pre-check status (qm status)
-      delegate_to: "{{ item.node_ip }}"
-      command: "qm status {{ item.vmid }}"
-      register: pre_status
-      changed_when: false
-      loop: "{{ plan }}"
-      loop_control: { label: "{{ item.name }} (vmid={{ item.vmid }}, node={{ item.pve_node }})" }
-
-    # --- reinicio ---
-    - name: Reboot VM (soft reboot, fallback to shutdown/start)
-      delegate_to: "{{ item.node_ip }}"
-      shell: |
-        set -e
-        if qm reboot {{ item.vmid }}; then
-          exit 0
-        else
-          qm shutdown {{ item.vmid }} --timeout 60 || true
-          for i in $(seq 1 30); do
-            state="$(qm status {{ item.vmid }} | awk '{print $2}')"
-            [ "$state" = "stopped" ] && break
-            sleep 2
-          done
-          qm start {{ item.vmid }}
-        fi
-      args: { executable: /bin/bash }
-      register: reboot_cmd
-      changed_when: true
-      loop: "{{ plan }}"
-      loop_control: { label: "{{ item.name }} (vmid={{ item.vmid }}, node={{ item.pve_node }})" }
-
-    # --- pausa entre VMs ---
-    - name: Wait {{ delay_between }} seconds between VMs
-      wait_for:
-        timeout: "{{ delay_between }}"
-      loop: "{{ plan }}"
-      loop_control: { label: "pause after {{ item.name }}" }
-      changed_when: false
-
-    # --- post-check ---
-    - name: Post-check status (expect 'running')
-      delegate_to: "{{ item.node_ip }}"
-      shell: |
-        state="$(qm status {{ item.vmid }} | awk '{print $2}')"
-        echo "$state"
-        [ "$state" = "running" ]
-      args: { executable: /bin/bash }
-      register: post_status
-      retries: 10
-      delay: 6
-      until: post_status.rc == 0
-      changed_when: false
-      loop: "{{ plan }}"
-      loop_control: { label: "{{ item.name }} (vmid={{ item.vmid }})" }
-
-    - name: Summary
-      debug:
-        msg: "Restarted: {{ plan | map(attribute='name') | list }}"
+    - name: Esperar 2 minutos (120 segundos) después del reinicio de Windows
+      ansible.builtin.wait_for:
+        timeout: 120
+      when: vm_os == 'windows'
