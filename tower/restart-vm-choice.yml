@@ -1,40 +1,55 @@
 ---
-- name: Reiniciar una VM de Proxmox usando comandos qm y Credencial SSH
-  # Ejecutamos en todo el grupo 'pve' (todos los nodos Proxmox)
-  hosts: pve
-  connection: ssh
-  become: yes
+- name: 1. Descubrir el nodo PVE y agregar el host correcto al inventario temporal
+  # Ejecutamos en el servidor AWX (localhost) una sola vez
+  hosts: localhost
   gather_facts: no
 
   vars:
-    # 1. Obtenemos el diccionario de las VMs del grupo 'pve'. 
-    # Usamos la sintaxis 'hostvars[groups['pve'][0]]' para forzar la carga de la variable de grupo
-    # desde el primer host del grupo, lo que resuelve el problema de 'hostvars' indefinido.
-    pve_group_vars: "{{ hostvars[groups['pve'][0]] }}"
+    # Obtener el diccionario de las VMs del grupo 'pve' desde un host conocido para evitar 'hostvars' undefined
+    # Asumimos que 'pve20' es un host siempre presente en el grupo 'pve'.
+    pve_group_vars: "{{ hostvars['pve20'] }}"
     vms_data: "{{ pve_group_vars.proxmox_vms }}"
     
-    # 2. Obtenemos el nombre del nodo PVE (pve70, pve50, etc.) para la VM seleccionada.
-    vm_pve_node_name: "{{ vms_data[vm_to_restart | lower].pve_node | lower }}"
+    # Detalle de la VM seleccionada por el survey
+    vm_details: "{{ vms_data[vm_to_restart | lower] }}"
     
-    # 3. Obtenemos el ID de la VM.
-    vm_vmid: "{{ vms_data[vm_to_restart | lower].vmid }}"
-    
-    # 4. Obtenemos el OS de la VM para la lógica de retardo.
-    vm_os: "{{ vms_data[vm_to_restart | lower].os | lower }}"
-
-  # Esta directiva garantiza que solo el host Proxmox que coincide con el 
-  # vm_pve_node_name ejecute las tareas del 'play'.
-  when: inventory_hostname == vm_pve_node_name
+    # Nombre y Vmid del nodo Proxmox
+    vm_pve_node_name: "{{ vm_details.pve_node | lower }}"
+    vm_vmid: "{{ vm_details.vmid }}"
+    vm_os: "{{ vm_details.os | lower }}"
 
   tasks:
-    - name: Verificar la conexión y la VM
+    - name: Determinar el nodo PVE para la VM
       debug:
-        msg: "Conexión SSH establecida en el nodo PVE: {{ inventory_hostname }}. Reiniciando VM {{ vm_to_restart }} (ID: {{ vm_vmid }})"
+        msg: "La VM '{{ vm_to_restart }}' (ID: {{ vm_vmid }}) está alojada en el nodo '{{ vm_pve_node_name }}'."
+
+    - name: 2. Agregar el nodo PVE de destino a un grupo temporal (pve_target)
+      # Esto nos permite ejecutar el siguiente play solo contra ese host.
+      ansible.builtin.add_host:
+        name: "{{ vm_pve_node_name }}"
+        groups: pve_target
+        # Pasamos las variables de la VM al host de destino
+        ansible_vm_vmid: "{{ vm_vmid }}"
+        ansible_vm_os: "{{ vm_os }}"
+      # NOTA: AWX (Tower) necesita que el nodo ya exista en el inventario para que esto funcione.
+      # Ya lo tienes como hosts individuales (pve20, pve30, etc.), lo cual es correcto.
+
+- name: 3. Ejecutar el reinicio contra el nodo PVE de destino
+  # Ejecutamos solo en el host agregado al grupo pve_target
+  hosts: pve_target
+  connection: ssh
+  become: yes # Utilizamos la Credencial Machine (SSH) como root
+  gather_facts: no
+  
+  tasks:
+    - name: Confirmar la conexión al nodo PVE de destino
+      debug:
+        msg: "Conectado a {{ inventory_hostname }} para reiniciar VM ID {{ ansible_vm_vmid }}"
 
     - name: Reiniciar la VM usando 'qm reboot'
-      ansible.builtin.command: "qm reboot {{ vm_vmid }}"
+      ansible.builtin.command: "qm reboot {{ ansible_vm_vmid }}"
 
     - name: Esperar 2 minutos (120 segundos) después del reinicio de Windows
       ansible.builtin.wait_for:
         timeout: 120
-      when: vm_os == 'windows'
+      when: ansible_vm_os == 'windows'
