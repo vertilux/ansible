@@ -1,14 +1,17 @@
 ---
 - name: Reiniciar VMs seleccionadas usando SSH y Delegación
-  # hosts: localhost es correcto para el play
   hosts: localhost
   gather_facts: no
   
-  # ... (vars se mantiene igual) ...
   vars:
+    # Carga de Variables (CRÍTICA)
     pve_group_vars: "{{ hostvars['pve20'] }}"
     vms_data: "{{ pve_group_vars.proxmox_vms }}"
     pve_nodes: "{{ pve_group_vars.pve_nodes }}"
+    
+    # [NUEVO] Variable para forzar la contraseña de la credencial SSH.
+    # Esto asegura que la credencial SSH se cargue completamente en el ámbito de localhost.
+    ansible_ssh_pass: "{{ ansible_password }}"
     
   tasks:
     - name: Iterar sobre la lista de VMs seleccionadas
@@ -17,7 +20,7 @@
       loop_control:
         loop_var: current_vm_name
       
-      # Variables de la iteración
+      # Variables pasadas al archivo incluido (como en el paso anterior)
       vars:
         vm_name: "{{ current_vm_name | lower }}"
         vm_details: "{{ vms_data[current_vm_name | lower] }}"
