@@ -6,8 +6,9 @@
 
 # --- ACCIÓN NET_OFF (Desconectar/Disable) ---
 - name: "2a. [NET_OFF] Deshabilitar/Desconectar la tarjeta de red (net0) de {{ vm_name | upper }}"
-  # CORRECCIÓN: Usamos 'disable=1'. Solo modificamos el estado sin tocar bridge o model.
-  ansible.builtin.command: "qm set {{ vm_vmid }} --net0 model=virtio,bridge=vmbr0,disable=1"
+  # CORRECCIÓN: Usamos la sintaxis de punto para la propiedad individual 'disable'.
+  # Esto equivale a marcar la casilla 'Disconnect' en la GUI.
+  ansible.builtin.command: "qm set {{ vm_vmid }} --net0.disable 1"
   delegate_to: "{{ pve_host_ip }}"
   vars:
     ansible_user: root 
@@ -15,8 +16,7 @@
 
 # --- ACCIÓN NET_ON (Conectar/Enable) ---
 - name: "2b. [NET_ON] Habilitar/Conectar la tarjeta de red (net0) de {{ vm_name | upper }}"
-  # CORRECCIÓN: Borramos el parámetro 'disable' de la configuración de net0.
-  # El parámetro 'delete' es necesario para eliminar una propiedad específica de la interfaz.
+  # CORRECCIÓN: Borramos el parámetro 'disable' para re-habilitar la conexión.
   ansible.builtin.command: "qm set {{ vm_vmid }} --delete net0.disable"
   delegate_to: "{{ pve_host_ip }}"
   vars:
