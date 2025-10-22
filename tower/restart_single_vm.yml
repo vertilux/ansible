@@ -1,17 +1,21 @@
-- name: Definir variables para la VM actual
+# Archivo: restart_single_vm.yml
+# Este archivo contiene SOLO la lista de tareas.
+
+- name: Definir variables para la VM actual ({{ item | upper }})
   ansible.builtin.set_fact:
-    vm_name: "{{ current_vm_name | lower }}"
-    vm_details: "{{ vms_data[vm_name] }}"
+    vm_name: "{{ item | lower }}"
+    # Usamos vm_name en lugar de item para asegurar que ya está definida
+    vm_details: "{{ vms_data[vm_name] }}" 
     vm_vmid: "{{ vm_details.vmid }}"
     vm_pve_node_name: "{{ vm_details.pve_node | lower }}"
     vm_os: "{{ vm_details.os | lower }}"
     pve_host_ip: "{{ pve_nodes[vm_pve_node_name] }}"
 
-- name: Confirmar la VM y el nodo de destino
+- name: Confirmar la VM {{ item | upper }} y el nodo de destino
   ansible.builtin.debug:
     msg: "Reiniciando {{ vm_name }} (ID: {{ vm_vmid }}). Delegando comando SSH al nodo PVE: {{ vm_pve_node_name }} ({{ pve_host_ip }})"
 
-- name: Reiniciar la VM usando 'qm reboot'
+- name: Reiniciar la VM {{ item | upper }} usando 'qm reboot'
   ansible.builtin.command: "qm reboot {{ vm_vmid }}"
   # Delegación a la IP del host PVE
   delegate_to: "{{ pve_host_ip }}"
