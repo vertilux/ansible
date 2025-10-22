@@ -1,33 +1,23 @@
 ---
-- name: 1. Cargar variables de inventario (Meta-Play)
-  # Este play se ejecuta en el grupo 'pve' para garantizar que las variables de grupo se carguen correctamente.
-  hosts: pve
-  gather_facts: no
-  
-  tasks:
-    - name: Forzar la carga de variables de inventario en el ámbito global
-      # Esta tarea no hace nada, solo asegura que hostvars y groups se carguen.
-      ansible.builtin.meta: end_host
-  
-  # Usamos 'run_once' para que no se ejecute en todos los hosts pve.
-  run_once: true
-
-- name: 2. Reiniciar VMs seleccionadas
-  # El play se ejecuta en el servidor AWX (localhost) una sola vez
+- name: Reiniciar VMs seleccionadas usando SSH y Delegación
+  # Este play se ejecuta en el servidor AWX (localhost) una sola vez
   hosts: localhost
   gather_facts: no
   
   vars:
-    # Ahora las variables de grupo están cargadas gracias al play anterior.
-    pve_group_vars: "{{ hostvars[groups['pve'][0]] }}"
+    # --- Carga de Variables (CRÍTICA) ---
+    # Accedemos a las variables de grupo a través de un host específico ('pve20') para evitar el error 'hostvars' undefined.
+    # Esta es la forma más estable sin usar Extra Variables.
+    pve_group_vars: "{{ hostvars['pve20'] }}"
     vms_data: "{{ pve_group_vars.proxmox_vms }}"
     pve_nodes: "{{ pve_group_vars.pve_nodes }}"
     
   tasks:
-    - name: Iterar sobre la lista de VMs seleccionadas
+    - name: Procesar el reinicio para cada VM seleccionada
       ansible.builtin.block:
+        
         # --- Configurar variables para la VM actual del bucle ---
-        - name: Definir variables para la VM actual
+        - name: Definir variables de la VM
           ansible.builtin.set_fact:
             vm_name: "{{ item | lower }}"
             vm_details: "{{ vms_data[item | lower] }}"
@@ -35,14 +25,14 @@
             vm_pve_node_name: "{{ vm_details.pve_node | lower }}"
             vm_os: "{{ vm_details.os | lower }}"
             pve_host_ip: "{{ pve_nodes[vm_details.pve_node | lower] }}"
-
+          
         - name: Confirmar la VM y el nodo de destino
           ansible.builtin.debug:
             msg: "Reiniciando {{ vm_name }} (ID: {{ vm_vmid }}). Delegando comando SSH al nodo PVE: {{ vm_pve_node_name }} ({{ pve_host_ip }})"
         
         - name: Reiniciar la VM usando 'qm reboot'
           ansible.builtin.command: "qm reboot {{ vm_vmid }}"
-          # DELEGACIÓN CLAVE
+          # DELEGACIÓN CLAVE: Ejecuta el comando en el nodo PVE.
           delegate_to: "{{ pve_host_ip }}"
           vars:
             ansible_user: administrator 
@@ -50,9 +40,7 @@
         - name: Esperar 2 minutos (120 segundos) después del reinicio de Windows
           ansible.builtin.wait_for:
             timeout: 120
-          # Nota: 'wait_for' se ejecuta en localhost, no en el nodo PVE.
           when: vm_os == 'windows'
 
-      # Bucle sobre la lista que proviene del Survey (ej: ['whs_srv', 'gr_miami'])
+      # El bucle se aplica a la directiva 'block', NO a una tarea de acción.
       loop: "{{ vm_to_restart }}"
-      run_once: true # Esto garantiza que el bucle se ejecute una vez en 'localhost' y las delegaciones se realicen.
