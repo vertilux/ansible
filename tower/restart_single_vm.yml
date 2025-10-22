@@ -13,5 +13,5 @@
     
 - name: "3. Esperar 2 minutos para Windows (VM: {{ vm_name | upper }})"
   ansible.builtin.wait_for:
-    timeout: 120
+    timeout: 60
   when: vm_os == 'windows'
