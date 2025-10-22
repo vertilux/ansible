@@ -1,7 +1,5 @@
 # Archivo: restart_single_vm.yml
 ---
-# ... Tareas 1a y 1b (set_fact) omitidas, asumimos que usaste la versión simplificada final ...
-
 - name: "1. Confirmar destino (VM: {{ vm_name | upper }}, Nodo: {{ vm_pve_node_name }})"
   ansible.builtin.debug:
     msg: "Reiniciando {{ vm_name }} (ID: {{ vm_vmid }}) en el nodo PVE: {{ vm_pve_node_name }} ({{ pve_host_ip }})"
@@ -10,10 +8,8 @@
   ansible.builtin.command: "qm reboot {{ vm_vmid }}"
   delegate_to: "{{ pve_host_ip }}"
   vars:
-    # CLAVE: SOLO NECESITAS EL USUARIO. EL PASSWORD/LLAVE VIENE DE LA CREDENCIAL DE AWX.
+    # Autenticación por Llave SSH configurada en la Credencial de AWX
     ansible_user: root 
-    # [ELIMINAR] Elimina cualquier línea que intente usar ansible_password
-    # ansible_password: "{{ ansible_password }}" 
     
 - name: "3. Esperar 2 minutos para Windows (VM: {{ vm_name | upper }})"
   ansible.builtin.wait_for:
