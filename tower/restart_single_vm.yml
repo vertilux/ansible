@@ -1,6 +1,6 @@
 # Archivo: restart_single_vm.yml
 ---
-# ... (Tareas 1a y 1b eliminadas, ya que no son necesarias si las variables se pasan correctamente) ...
+# ... Tareas 1a y 1b (set_fact) omitidas, asumimos que usaste la versión simplificada final ...
 
 - name: "1. Confirmar destino (VM: {{ vm_name | upper }}, Nodo: {{ vm_pve_node_name }})"
   ansible.builtin.debug:
@@ -10,9 +10,10 @@
   ansible.builtin.command: "qm reboot {{ vm_vmid }}"
   delegate_to: "{{ pve_host_ip }}"
   vars:
-    # Pasamos el usuario y la contraseña explícitamente para la conexión delegada.
-    ansible_user: root
-    ansible_password: "{{ root_password }}"  # Variable del Custom Credential de AWX
+    # CLAVE: SOLO NECESITAS EL USUARIO. EL PASSWORD/LLAVE VIENE DE LA CREDENCIAL DE AWX.
+    ansible_user: root 
+    # [ELIMINAR] Elimina cualquier línea que intente usar ansible_password
+    # ansible_password: "{{ ansible_password }}" 
     
 - name: "3. Esperar 2 minutos para Windows (VM: {{ vm_name | upper }})"
   ansible.builtin.wait_for:
