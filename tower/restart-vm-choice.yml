@@ -1,10 +1,11 @@
 ---
 - name: Reiniciar VMs seleccionadas usando SSH y Delegación
+  # hosts: localhost es correcto para el play
   hosts: localhost
   gather_facts: no
   
+  # ... (vars se mantiene igual) ...
   vars:
-    # Carga de Variables (CRÍTICA)
     pve_group_vars: "{{ hostvars['pve20'] }}"
     vms_data: "{{ pve_group_vars.proxmox_vms }}"
     pve_nodes: "{{ pve_group_vars.pve_nodes }}"
@@ -16,7 +17,7 @@
       loop_control:
         loop_var: current_vm_name
       
-      # Variables pasadas al archivo incluido:
+      # Variables de la iteración
       vars:
         vm_name: "{{ current_vm_name | lower }}"
         vm_details: "{{ vms_data[current_vm_name | lower] }}"
