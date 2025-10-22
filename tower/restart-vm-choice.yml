@@ -1,12 +1,10 @@
 ---
 - name: Reiniciar VMs seleccionadas usando SSH y Delegación
-  # Ejecutamos en el servidor AWX (localhost) para procesar el array del Survey
   hosts: localhost
   gather_facts: no
   
   vars:
-    # --- Carga de Variables (CRÍTICA) ---
-    # Accedemos a las variables de grupo a través de un host específico ('pve20')
+    # Carga de Variables (CRÍTICA)
     pve_group_vars: "{{ hostvars['pve20'] }}"
     vms_data: "{{ pve_group_vars.proxmox_vms }}"
     pve_nodes: "{{ pve_group_vars.pve_nodes }}"
@@ -14,7 +12,6 @@
   tasks:
     - name: Iterar sobre la lista de VMs seleccionadas
       ansible.builtin.include_tasks: restart_single_vm.yml
-      # El loop aplica la lista del survey al archivo de tareas
       loop: "{{ vm_to_restart }}"
       loop_control:
         loop_var: current_vm_name
