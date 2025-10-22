@@ -4,23 +4,20 @@
   gather_facts: no
   
   vars:
-    # Carga de Variables (CRÍTICA)
+    # Carga de Variables (CRÍTICA): Asegura que las variables de grupo se carguen.
     pve_group_vars: "{{ hostvars['pve20'] }}"
     vms_data: "{{ pve_group_vars.proxmox_vms }}"
     pve_nodes: "{{ pve_group_vars.pve_nodes }}"
     
-    # [NUEVO] Variable para forzar la contraseña de la credencial SSH.
-    # Esto asegura que la credencial SSH se cargue completamente en el ámbito de localhost.
-    ansible_ssh_pass: "{{ ansible_password }}"
-    
   tasks:
-    - name: Iterar sobre la lista de VMs seleccionadas
+    - name: Iterar sobre la lista de VMs seleccionadas e incluir tareas
       ansible.builtin.include_tasks: restart_single_vm.yml
+      # La variable 'vm_to_restart' es la lista del Survey (['vm1', 'vm2', ...])
       loop: "{{ vm_to_restart }}"
       loop_control:
         loop_var: current_vm_name
       
-      # Variables pasadas al archivo incluido (como en el paso anterior)
+      # Variables de la iteración pasadas al archivo incluido
       vars:
         vm_name: "{{ current_vm_name | lower }}"
         vm_details: "{{ vms_data[current_vm_name | lower] }}"
