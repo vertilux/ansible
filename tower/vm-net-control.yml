@@ -1,28 +1,28 @@
 ---
-- name: Control de Red de VMs seleccionadas
+- name: Network Control for Selected VMs
   hosts: localhost
   gather_facts: no
   
   vars:
-    # Carga de Variables
+    # Critical Variables: Ensures group variables are loaded.
     pve_group_vars: "{{ hostvars['pve20'] }}"
     vms_data: "{{ pve_group_vars.proxmox_vms }}"
     pve_nodes: "{{ pve_group_vars.pve_nodes }}"
     
   tasks:
-    - name: Verificar si se seleccionó una acción de red válida
+    - name: Validate if a correct network action was selected
       ansible.builtin.fail:
-        msg: "Debe seleccionar un modo de acción válido: net_off (desconectar) o net_on (conectar)."
+        msg: "You must select a valid action mode: net_off (disconnect) or net_on (connect)."
       when: net_action not in ['net_off', 'net_on']
 
-    - name: Iterar sobre las VMs seleccionadas e incluir la lógica de red
+    - name: Iterate over selected VMs and include network logic
       ansible.builtin.include_tasks: vm_net_logic.yml
-      # La lista de VMs es 'vm_to_restart'
+      # 'vm_to_restart' is the list from the Survey
       loop: "{{ vm_to_restart }}"
       loop_control:
         loop_var: current_vm_name
       
-      # Variables de la iteración pasadas al archivo incluido
+      # Variables passed to the included file
       vars:
         vm_name: "{{ current_vm_name | lower }}"
         vm_details: "{{ vms_data[current_vm_name | lower] }}"
