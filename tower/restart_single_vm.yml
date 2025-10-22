@@ -1,30 +1,25 @@
-# Archivo: restart_single_vm.yml
----
-# Definimos las variables para la iteración actual aquí, asegurando que estén disponibles
-# antes de que se ejecuten las tareas del archivo.
-- name: Tareas para reiniciar una VM
-  vars:
+- name: Definir variables para la VM actual
+  ansible.builtin.set_fact:
     vm_name: "{{ current_vm_name | lower }}"
-    vm_details: "{{ vms_data[vm_name] }}" # Corregimos el acceso al diccionario
+    vm_details: "{{ vms_data[vm_name] }}"
     vm_vmid: "{{ vm_details.vmid }}"
     vm_pve_node_name: "{{ vm_details.pve_node | lower }}"
     vm_os: "{{ vm_details.os | lower }}"
     pve_host_ip: "{{ pve_nodes[vm_pve_node_name] }}"
-    
-  tasks:
-    - name: 1. Confirmar la VM y el nodo de destino
-      ansible.builtin.debug:
-        msg: "Reiniciando {{ vm_name }} (ID: {{ vm_vmid }}). Delegando comando SSH al nodo PVE: {{ vm_pve_node_name }} ({{ pve_host_ip }})"
 
-    - name: 2. Reiniciar la VM usando 'qm reboot'
-      ansible.builtin.command: "qm reboot {{ vm_vmid }}"
-      # Delegación a la IP del host PVE
-      delegate_to: "{{ pve_host_ip }}"
-      vars:
-        # Usar la credencial SSH de AWX con el usuario 'administrator'
-        ansible_user: administrator 
-        
-    - name: 3. Esperar 2 minutos (120 segundos) después del reinicio de Windows
-      ansible.builtin.wait_for:
-        timeout: 120
-      when: vm_os == 'windows'
+- name: Confirmar la VM y el nodo de destino
+  ansible.builtin.debug:
+    msg: "Reiniciando {{ vm_name }} (ID: {{ vm_vmid }}). Delegando comando SSH al nodo PVE: {{ vm_pve_node_name }} ({{ pve_host_ip }})"
+
+- name: Reiniciar la VM usando 'qm reboot'
+  ansible.builtin.command: "qm reboot {{ vm_vmid }}"
+  # Delegación a la IP del host PVE
+  delegate_to: "{{ pve_host_ip }}"
+  vars:
+    # Usar la credencial SSH de AWX con el usuario 'administrator'
+    ansible_user: administrator 
+    
+- name: Esperar 2 minutos (120 segundos) después del reinicio de Windows
+  ansible.builtin.wait_for:
+    timeout: 120
+  when: vm_os == 'windows'
