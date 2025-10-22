@@ -1,26 +1,44 @@
 # Archivo: vm_net_logic.yml
 ---
-- name: "1. Confirmar destino (VM: {{ vm_name | upper }}, Modo: {{ net_action | upper }})"
-  ansible.builtin.debug:
-    msg: "Ejecutando {{ net_action }} en {{ vm_name }} (ID: {{ vm_vmid }}) en nodo PVE: {{ pve_host_ip }}"
+# --- Tarea NUEVA: Obtener la configuración actual de la VM desde Proxmox ---
+- name: "1a. Obtener configuración actual de la red de {{ vm_name | upper }}"
+  community.general.proxmox_facts:
+    # Usamos la conexión delegada de SSH para ejecutar el módulo en el nodo PVE
+    api_host: "localhost"
+    api_user: root@pam  # Usuario que debe estar configurado en el nodo PVE
+    api_token_id: "DUMMY_ID" # AWX no usará esto, pero el módulo lo requiere
+    api_token_secret: "DUMMY_SECRET" # AWX no usará esto, pero el módulo lo requiere
+    node: "{{ vm_pve_node_name }}"
+    vmid: "{{ vm_vmid }}"
+  delegate_to: "{{ pve_host_ip }}"
+  vars:
+    ansible_user: root
+    
+- name: "1b. Extraer la línea de configuración de net0"
+  ansible.builtin.set_fact:
+    # El módulo proxmox_facts guarda los datos en ansible_facts.proxmox
+    # Usamos regex para limpiar y obtener solo el valor de net0.
+    net0_config_full: "{{ ansible_facts.proxmox.net0.raw }}"
+    # La salida es algo como: 'virtio=BC:24:11:DF:24:8F,bridge=vmbr0,firewall=1,tag=6'
 
-# --- ACCIÓN NET_OFF (Desconectar/Disable) ---
-- name: "2a. [NET_OFF] Deshabilitar/Desconectar la tarjeta de red (net0) de {{ vm_name | upper }}"
-  # CORRECCIÓN FINAL: Reaplicamos la configuración de net0, añadiendo 'disable=1'.
-  # Usamos la sintaxis qm set <vmid> --<propiedad> <valor> para el dispositivo.
-  # Proxmox requiere que el valor contenga todos los parámetros de la interfaz.
-  # Eliminamos la opción que falló: '--net0.disable 1'
-  # Y usamos la sintaxis completa:
-  ansible.builtin.command: "qm set {{ vm_vmid }} --net0 model=virtio,bridge=vmbr0,disable=1"
+- name: "2. Confirmar destino (VM: {{ vm_name | upper }}, Modo: {{ net_action | upper }})"
+  ansible.builtin.debug:
+    msg: "Ejecutando {{ net_action }} en {{ vm_name }} (ID: {{ vm_vmid }}). Config: {{ net0_config_full }}"
+
+# --- ACCIÓN NET_OFF (Desconectar) ---
+- name: "3a. [NET_OFF] Desconectar la tarjeta de red (net0) de {{ vm_name | upper }}"
+  # CORRECCIÓN: Usamos la configuración completa, añadiendo ',link_down=1'
+  ansible.builtin.command: "qm set {{ vm_vmid }} --net0 {{ net0_config_full }},link_down=1"
   delegate_to: "{{ pve_host_ip }}"
   vars:
     ansible_user: root 
   when: net_action == 'net_off'
 
-# --- ACCIÓN NET_ON (Conectar/Enable) ---
-- name: "2b. [NET_ON] Habilitar/Conectar la tarjeta de red (net0) de {{ vm_name | upper }}"
-  # CORRECCIÓN FINAL: Reaplicamos la configuración completa sin el parámetro 'disable=1'.
-  ansible.builtin.command: "qm set {{ vm_vmid }} --net0 model=virtio,bridge=vmbr0"
+# --- ACCIÓN NET_ON (Conectar) ---
+- name: "3b. [NET_ON] Reconectar la tarjeta de red (net0) de {{ vm_name | upper }}"
+  # CORRECCIÓN: Usamos un filtro para eliminar ',link_down=1' de la configuración actual
+  # Usamos regex_replace para eliminar 'link_down=1' si existe.
+  ansible.builtin.command: "qm set {{ vm_vmid }} --net0 {{ net0_config_full | regex_replace(',link_down=[01]', '') }}"
   delegate_to: "{{ pve_host_ip }}"
   vars:
     ansible_user: root 
