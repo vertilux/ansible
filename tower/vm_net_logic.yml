@@ -1,0 +1,23 @@
+# Archivo: vm_net_logic.yml
+---
+- name: "1. Confirmar destino (VM: {{ vm_name | upper }}, Modo: {{ net_action | upper }})"
+  ansible.builtin.debug:
+    msg: "Ejecutando {{ net_action }} en {{ vm_name }} (ID: {{ vm_vmid }}) en nodo PVE: {{ pve_host_ip }}"
+
+# --- ACCIÓN NET_OFF (Desconectar) ---
+- name: "2a. [NET_OFF] Desconectar la tarjeta de red (net0) de {{ vm_name | upper }}"
+  # Elimina la configuración de la tarjeta de red, desconectando la VM.
+  ansible.builtin.command: "qm set {{ vm_vmid }} --delete net0"
+  delegate_to: "{{ pve_host_ip }}"
+  vars:
+    ansible_user: root 
+  when: net_action == 'net_off'
+
+# --- ACCIÓN NET_ON (Conectar) ---
+- name: "2b. [NET_ON] Reconectar la tarjeta de red (net0) de {{ vm_name | upper }}"
+  # Asume la configuración por defecto: model=virtio y bridge=vmbr0. AJUSTA si tu puente es diferente.
+  ansible.builtin.command: "qm set {{ vm_vmid }} --net0 model=virtio,bridge=vmbr0"
+  delegate_to: "{{ pve_host_ip }}"
+  vars:
+    ansible_user: root 
+  when: net_action == 'net_on'
