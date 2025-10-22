@@ -1,22 +1,22 @@
 ---
 - name: Reiniciar VMs seleccionadas usando SSH y Delegación
-  # Este play se ejecuta en el servidor AWX (localhost) una sola vez
+  # Ejecutamos en el servidor AWX (localhost) para procesar el array del Survey
   hosts: localhost
   gather_facts: no
   
   vars:
     # --- Carga de Variables (CRÍTICA) ---
-    # Accedemos a las variables de grupo a través de un host específico ('pve20') para evitar el error 'hostvars' undefined.
-    # Esta es la forma más estable sin usar Extra Variables.
+    # Accedemos a las variables de grupo a través de un host específico ('pve20') para asegurar
+    # que las variables de inventario se carguen antes de usarlas.
     pve_group_vars: "{{ hostvars['pve20'] }}"
     vms_data: "{{ pve_group_vars.proxmox_vms }}"
     pve_nodes: "{{ pve_group_vars.pve_nodes }}"
     
   tasks:
-    - name: Procesar el reinicio para cada VM seleccionada
+    - name: Iterar sobre la lista de VMs seleccionadas
       ansible.builtin.block:
         
-        # --- Configurar variables para la VM actual del bucle ---
+        # --- Tarea 1: Configurar variables para la VM actual del bucle ---
         - name: Definir variables de la VM
           ansible.builtin.set_fact:
             vm_name: "{{ item | lower }}"
@@ -26,21 +26,26 @@
             vm_os: "{{ vm_details.os | lower }}"
             pve_host_ip: "{{ pve_nodes[vm_details.pve_node | lower] }}"
           
+        # --- Tarea 2: Confirmar el destino ---
         - name: Confirmar la VM y el nodo de destino
           ansible.builtin.debug:
             msg: "Reiniciando {{ vm_name }} (ID: {{ vm_vmid }}). Delegando comando SSH al nodo PVE: {{ vm_pve_node_name }} ({{ pve_host_ip }})"
         
+        # --- Tarea 3: Ejecutar el reinicio ---
         - name: Reiniciar la VM usando 'qm reboot'
           ansible.builtin.command: "qm reboot {{ vm_vmid }}"
-          # DELEGACIÓN CLAVE: Ejecuta el comando en el nodo PVE.
+          # Delegación a la IP del host PVE
           delegate_to: "{{ pve_host_ip }}"
           vars:
+            # Usar la credencial SSH de AWX con el usuario 'administrator'
             ansible_user: administrator 
             
+        # --- Tarea 4: Retardo para Windows ---
         - name: Esperar 2 minutos (120 segundos) después del reinicio de Windows
           ansible.builtin.wait_for:
             timeout: 120
           when: vm_os == 'windows'
 
-      # El bucle se aplica a la directiva 'block', NO a una tarea de acción.
+      # El 'loop' se aplica directamente a la sentencia 'block'
       loop: "{{ vm_to_restart }}"
+      run_once: true # Asegura que la iteración ocurra una sola vez en localhost
