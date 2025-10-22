@@ -6,8 +6,8 @@
 
 # --- ACCIÓN NET_OFF (Desconectar) ---
 - name: "2a. [NET_OFF] Desconectar la tarjeta de red (net0) de {{ vm_name | upper }}"
-  # Simula la casilla 'Disconnect': mantiene la configuración, pero marca la interfaz como no conectada.
-  ansible.builtin.command: "qm set {{ vm_vmid }} --net0 media=disconnected"
+  # CORRECCIÓN: Incluimos el modelo y el bridge (virtio, vmbr0) junto con el estado de media.
+  ansible.builtin.command: "qm set {{ vm_vmid }} --net0 model=virtio,bridge=vmbr0,media=disconnected"
   delegate_to: "{{ pve_host_ip }}"
   vars:
     ansible_user: root 
@@ -15,9 +15,7 @@
 
 # --- ACCIÓN NET_ON (Conectar) ---
 - name: "2b. [NET_ON] Reconectar la tarjeta de red (net0) de {{ vm_name | upper }}"
-  # Simula desmarcar la casilla 'Disconnect': fuerza el estado 'operacional' o 'conectado'.
-  # El comando simplemente fuerza la configuración existente sin el parámetro 'media=disconnected'.
-  # NOTA: Aseguramos la configuración completa para evitar que Proxmox la borre si encuentra la clave 'media' vacía.
+  # CORRECCIÓN: Incluimos el modelo y el bridge y omitimos el estado de media (que por defecto es 'connected').
   ansible.builtin.command: "qm set {{ vm_vmid }} --net0 model=virtio,bridge=vmbr0"
   delegate_to: "{{ pve_host_ip }}"
   vars:
