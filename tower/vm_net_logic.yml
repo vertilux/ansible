@@ -2,7 +2,6 @@
 ---
 # --- Tarea 1a: Obtener la configuración de red de la VM usando 'qm config' ---
 - name: "1a. Obtener la línea de configuración de net0"
-  # CORRECCIÓN: Usamos 'shell' para permitir la tubería '|' y 'grep'.
   ansible.builtin.shell: "qm config {{ vm_vmid }} | grep net0"
   delegate_to: "{{ pve_host_ip }}"
   vars:
@@ -11,9 +10,27 @@
   
 # --- Tarea 1b: Procesar y limpiar la configuración ---
 - name: "1b. Extraer y limpiar la configuración de net0"
-  ansible.builtin.set_fact:
+  # CLAVE: Usar el módulo 'set_fact' en la línea siguiente, no en la misma línea que 'name'.
+  ansible.builtin.set_fact: 
     # Quitamos 'net0: ' del inicio y cualquier espacio en blanco al final.
     net0_config_full: "{{ qm_config_output.stdout | regex_replace('^net0: ', '') | trim }}"
 
 - name: "2. Confirmar destino (VM: {{ vm_name | upper }}, Modo: {{ net_action | upper }})"
-# ... (El resto del playbook se mantiene)
+  ansible.builtin.debug:
+    msg: "Ejecutando {{ net_action }} en {{ vm_name }} (ID: {{ vm_vmid }}). Config: {{ net0_config_full }}"
+
+# --- ACCIÓN NET_OFF (Desconectar) ---
+- name: "3a. [NET_OFF] Desconectar la tarjeta de red (net0) de {{ vm_name | upper }}"
+  ansible.builtin.command: "qm set {{ vm_vmid }} --net0 {{ net0_config_full }},link_down=1"
+  delegate_to: "{{ pve_host_ip }}"
+  vars:
+    ansible_user: root 
+  when: net_action == 'net_off'
+
+# --- ACCIÓN NET_ON (Conectar) ---
+- name: "3b. [NET_ON] Reconectar la tarjeta de red (net0) de {{ vm_name | upper }}"
+  ansible.builtin.command: "qm set {{ vm_vmid }} --net0 {{ net0_config_full | regex_replace(',link_down=[01]', '') }}"
+  delegate_to: "{{ pve_host_ip }}"
+  vars:
+    ansible_user: root 
+  when: net_action == 'net_on'
