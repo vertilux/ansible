@@ -1,32 +1,29 @@
 # Archivo: restart_single_vm.yml
 ---
-# Tarea 1a: Define vm_details y vm_name (solo depende de 'item')
 - name: 1a. Definir detalles de VM ({{ item | upper }})
   ansible.builtin.set_fact:
     vm_details: "{{ vms_data[item | lower] }}"
     vm_name: "{{ item | lower }}"
 
-# Tarea 1b: Define las variables dependientes (solo depende de vm_details y vm_name)
 - name: 1b. Establecer variables dependientes
   ansible.builtin.set_fact:
     vm_vmid: "{{ vm_details.vmid }}"
-    # Definimos la variable vm_pve_node_name aquí
     vm_pve_node_name: "{{ vm_details.pve_node | lower }}"
     vm_os: "{{ vm_details.os | lower }}"
     pve_host_ip: "{{ pve_nodes[vm_pve_node_name] }}"
 
-# Tarea 2: Ahora todas las variables están disponibles, podemos usarlas en el nombre
-- name: 2. Confirmar destino (VM: {{ vm_name | upper }}, Nodo: {{ vm_pve_node_name }})
+# CORRECCIÓN CLAVE: Usamos comillas dobles alrededor de la cadena que contiene llaves.
+- name: "2. Confirmar destino (VM: {{ vm_name | upper }}, Nodo: {{ vm_pve_node_name }})"
   ansible.builtin.debug:
     msg: "Reiniciando {{ vm_name }} (ID: {{ vm_vmid }}) en el nodo PVE: {{ vm_pve_node_name }} ({{ pve_host_ip }})"
 
-- name: 3. Reiniciar la VM {{ vm_name | upper }} usando 'qm reboot'
+- name: "3. Reiniciar la VM {{ vm_name | upper }} usando 'qm reboot'"
   ansible.builtin.command: "qm reboot {{ vm_vmid }}"
   delegate_to: "{{ pve_host_ip }}"
   vars:
     ansible_user: administrator 
     
-- name: 4. Esperar 2 minutos para Windows (VM: {{ vm_name | upper }})
+- name: "4. Esperar 2 minutos para Windows (VM: {{ vm_name | upper }})"
   ansible.builtin.wait_for:
     timeout: 120
   when: vm_os == 'windows'
