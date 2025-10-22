@@ -1,26 +1,31 @@
 ---
 - name: Reiniciar una VM de Proxmox usando comandos qm y Credencial SSH
-  # Ejecutamos en el nodo PVE donde se encuentra la VM, NO en el AWX (localhost)
-  hosts: '{{ vm_to_restart | lower }}_host'
+  # Ejecutamos en el NODO PVE que aloja la VM (p.ej., pve70), NO en un host ficticio.
+  hosts: '{{ host_to_connect }}'
   connection: ssh
-  become: yes # Asegura que se use el usuario root
+  become: yes # Usamos 'root'
   gather_facts: no
 
   vars:
-    # Obtener el ID de la VM
-    vm_vmid: "{{ hostvars[inventory_hostname]['proxmox_vms'][vm_to_restart | lower]['vmid'] }}"
-    # Obtener el OS de la VM para la lógica de retardo
-    vm_os: "{{ hostvars[inventory_hostname]['proxmox_vms'][vm_to_restart | lower]['os'] | lower }}"
+    # 1. Obtenemos el diccionario de las VMs del grupo 'pve'.
+    vms_data: "{{ groups['pve'] | map('extract', hostvars, 'proxmox_vms') | unique | first }}"
+    # 2. Obtenemos el nombre del nodo PVE (pve70, pve50, etc.) para la VM seleccionada.
+    vm_pve_node_name: "{{ vms_data[vm_to_restart | lower].pve_node | lower }}"
+    # 3. Definimos el host real al que nos conectaremos.
+    host_to_connect: "{{ vm_pve_node_name }}"
+    # 4. Obtenemos el ID de la VM.
+    vm_vmid: "{{ vms_data[vm_to_restart | lower].vmid }}"
+    # 5. Obtenemos el OS de la VM para la lógica de retardo.
+    vm_os: "{{ vms_data[vm_to_restart | lower].os | lower }}"
 
   tasks:
-    - name: Determinar el Host Proxmox y la VM
+    - name: Verificar la conexión y la VM
       debug:
-        msg: "Conectándose al host: {{ inventory_hostname }}. Reiniciando VM (ID: {{ vm_vmid }})"
+        msg: "Conexión SSH establecida en el nodo PVE: {{ host_to_connect }}. Reiniciando VM {{ vm_to_restart }} (ID: {{ vm_vmid }})"
       run_once: yes
 
     - name: Reiniciar la VM usando 'qm reboot'
       ansible.builtin.command: "qm reboot {{ vm_vmid }}"
-      # Nota: qm reboot intenta un apagado elegante, si falla usa el parámetro '--force'
 
     - name: Esperar 2 minutos (120 segundos) después del reinicio de Windows
       ansible.builtin.wait_for:
