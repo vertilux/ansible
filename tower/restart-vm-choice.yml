@@ -12,6 +12,15 @@
   tasks:
     - name: Iterar sobre la lista de VMs seleccionadas
       ansible.builtin.include_tasks: restart_single_vm.yml
-      # Usamos el bucle estándar sin loop_control, inyectando 'item'.
       loop: "{{ vm_to_restart }}"
-      # NOTA: La variable del bucle dentro de restart_single_vm.yml será 'item'.
+      loop_control:
+        loop_var: current_vm_name
+      
+      # Variables pasadas al archivo incluido:
+      vars:
+        vm_name: "{{ current_vm_name | lower }}"
+        vm_details: "{{ vms_data[current_vm_name | lower] }}"
+        vm_vmid: "{{ vm_details.vmid }}"
+        vm_pve_node_name: "{{ vm_details.pve_node | lower }}"
+        vm_os: "{{ vm_details.os | lower }}"
+        pve_host_ip: "{{ pve_nodes[vm_details.pve_node | lower] }}"
