@@ -1,29 +1,27 @@
 # Archivo: restart_single_vm.yml
 # Este archivo contiene SOLO la lista de tareas.
 
-- name: Definir variables para la VM actual ({{ item | upper }})
+- name: 1. Definir variables para la VM actual ({{ item | upper }})
   ansible.builtin.set_fact:
+    # Usamos 'item' directamente para la búsqueda, eliminando la dependencia de vm_name
+    vm_details: "{{ vms_data[item | lower] }}"
     vm_name: "{{ item | lower }}"
-    # Usamos vm_name en lugar de item para asegurar que ya está definida
-    vm_details: "{{ vms_data[vm_name] }}" 
     vm_vmid: "{{ vm_details.vmid }}"
     vm_pve_node_name: "{{ vm_details.pve_node | lower }}"
     vm_os: "{{ vm_details.os | lower }}"
-    pve_host_ip: "{{ pve_nodes[vm_pve_node_name] }}"
-
-- name: Confirmar la VM {{ item | upper }} y el nodo de destino
+    pve_host_ip: "{{ pve_nodes[vm_details.pve_node | lower] }}"
+  
+- name: 2. Confirmar la VM {{ vm_name | upper }} y el nodo de destino
   ansible.builtin.debug:
     msg: "Reiniciando {{ vm_name }} (ID: {{ vm_vmid }}). Delegando comando SSH al nodo PVE: {{ vm_pve_node_name }} ({{ pve_host_ip }})"
 
-- name: Reiniciar la VM {{ item | upper }} usando 'qm reboot'
+- name: 3. Reiniciar la VM {{ vm_name | upper }} usando 'qm reboot'
   ansible.builtin.command: "qm reboot {{ vm_vmid }}"
-  # Delegación a la IP del host PVE
   delegate_to: "{{ pve_host_ip }}"
   vars:
-    # Usar la credencial SSH de AWX con el usuario 'administrator'
     ansible_user: administrator 
     
-- name: Esperar 2 minutos (120 segundos) después del reinicio de Windows
+- name: 4. Esperar 2 minutos (120 segundos) después del reinicio de Windows
   ansible.builtin.wait_for:
     timeout: 120
   when: vm_os == 'windows'
