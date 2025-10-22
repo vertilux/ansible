@@ -1,0 +1,27 @@
+---
+- name: Desconectar interfaces de red de VMs seleccionadas
+  hosts: localhost
+  gather_facts: no
+  
+  vars:
+    # Carga de Variables (CRÍTICA): Asegura que las variables de grupo se carguen.
+    pve_group_vars: "{{ hostvars['pve20'] }}"
+    vms_data: "{{ pve_group_vars.proxmox_vms }}"
+    pve_nodes: "{{ pve_group_vars.pve_nodes }}"
+    
+  tasks:
+    - name: Iterar sobre la lista de VMs seleccionadas e incluir tareas
+      ansible.builtin.include_tasks: disconnect_single_vm_net.yml
+      # La variable 'vm_to_restart' es la lista del Survey (['vm1', 'vm2', ...])
+      loop: "{{ vm_to_restart }}"
+      loop_control:
+        loop_var: current_vm_name
+      
+      # Variables de la iteración pasadas al archivo incluido
+      vars:
+        vm_name: "{{ current_vm_name | lower }}"
+        vm_details: "{{ vms_data[current_vm_name | lower] }}"
+        vm_vmid: "{{ vm_details.vmid }}"
+        vm_pve_node_name: "{{ vm_details.pve_node | lower }}"
+        vm_os: "{{ vm_details.os | lower }}"
+        pve_host_ip: "{{ pve_nodes[vm_details.pve_node | lower] }}"
