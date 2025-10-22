@@ -1,28 +1,35 @@
 ---
 - name: Reiniciar una VM de Proxmox usando comandos qm y Credencial SSH
-  # Ejecutamos en el NODO PVE que aloja la VM (p.ej., pve70), NO en un host ficticio.
-  hosts: '{{ host_to_connect }}'
+  # Ejecutamos en todo el grupo 'pve' (todos los nodos Proxmox)
+  hosts: pve
   connection: ssh
-  become: yes # Usamos 'root'
+  become: yes
   gather_facts: no
 
   vars:
-    # 1. Obtenemos el diccionario de las VMs del grupo 'pve'.
-    vms_data: "{{ groups['pve'] | map('extract', hostvars, 'proxmox_vms') | unique | first }}"
+    # 1. Obtenemos el diccionario de las VMs del grupo 'pve'. 
+    # Usamos la sintaxis 'hostvars[groups['pve'][0]]' para forzar la carga de la variable de grupo
+    # desde el primer host del grupo, lo que resuelve el problema de 'hostvars' indefinido.
+    pve_group_vars: "{{ hostvars[groups['pve'][0]] }}"
+    vms_data: "{{ pve_group_vars.proxmox_vms }}"
+    
     # 2. Obtenemos el nombre del nodo PVE (pve70, pve50, etc.) para la VM seleccionada.
     vm_pve_node_name: "{{ vms_data[vm_to_restart | lower].pve_node | lower }}"
-    # 3. Definimos el host real al que nos conectaremos.
-    host_to_connect: "{{ vm_pve_node_name }}"
-    # 4. Obtenemos el ID de la VM.
+    
+    # 3. Obtenemos el ID de la VM.
     vm_vmid: "{{ vms_data[vm_to_restart | lower].vmid }}"
-    # 5. Obtenemos el OS de la VM para la lógica de retardo.
+    
+    # 4. Obtenemos el OS de la VM para la lógica de retardo.
     vm_os: "{{ vms_data[vm_to_restart | lower].os | lower }}"
+
+  # Esta directiva garantiza que solo el host Proxmox que coincide con el 
+  # vm_pve_node_name ejecute las tareas del 'play'.
+  when: inventory_hostname == vm_pve_node_name
 
   tasks:
     - name: Verificar la conexión y la VM
       debug:
-        msg: "Conexión SSH establecida en el nodo PVE: {{ host_to_connect }}. Reiniciando VM {{ vm_to_restart }} (ID: {{ vm_vmid }})"
-      run_once: yes
+        msg: "Conexión SSH establecida en el nodo PVE: {{ inventory_hostname }}. Reiniciando VM {{ vm_to_restart }} (ID: {{ vm_vmid }})"
 
     - name: Reiniciar la VM usando 'qm reboot'
       ansible.builtin.command: "qm reboot {{ vm_vmid }}"
