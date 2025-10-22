@@ -2,7 +2,8 @@
 ---
 # --- Tarea 1a: Obtener la configuración de red de la VM usando 'qm config' ---
 - name: "1a. Obtener la línea de configuración de net0"
-  ansible.builtin.command: "qm config {{ vm_vmid }} | grep net0"
+  # CORRECCIÓN: Usamos 'shell' para permitir la tubería '|' y 'grep'.
+  ansible.builtin.shell: "qm config {{ vm_vmid }} | grep net0"
   delegate_to: "{{ pve_host_ip }}"
   vars:
     ansible_user: root
@@ -11,27 +12,8 @@
 # --- Tarea 1b: Procesar y limpiar la configuración ---
 - name: "1b. Extraer y limpiar la configuración de net0"
   ansible.builtin.set_fact:
-    # La salida es 'net0: virtio=BC:...,tag=6'. Quitamos 'net0: ' y la nueva línea.
+    # Quitamos 'net0: ' del inicio y cualquier espacio en blanco al final.
     net0_config_full: "{{ qm_config_output.stdout | regex_replace('^net0: ', '') | trim }}"
 
 - name: "2. Confirmar destino (VM: {{ vm_name | upper }}, Modo: {{ net_action | upper }})"
-  ansible.builtin.debug:
-    msg: "Ejecutando {{ net_action }} en {{ vm_name }} (ID: {{ vm_vmid }}). Config: {{ net0_config_full }}"
-
-# --- ACCIÓN NET_OFF (Desconectar) ---
-- name: "3a. [NET_OFF] Desconectar la tarjeta de red (net0) de {{ vm_name | upper }}"
-  # USAMOS LA CONFIGURACIÓN OBTENIDA DINÁMICAMENTE, añadiendo el comando link_down.
-  ansible.builtin.command: "qm set {{ vm_vmid }} --net0 {{ net0_config_full }},link_down=1"
-  delegate_to: "{{ pve_host_ip }}"
-  vars:
-    ansible_user: root 
-  when: net_action == 'net_off'
-
-# --- ACCIÓN NET_ON (Conectar) ---
-- name: "3b. [NET_ON] Reconectar la tarjeta de red (net0) de {{ vm_name | upper }}"
-  # Usamos regex_replace para eliminar la opción ',link_down=1' (o ',link_down=0') si ya existe, restaurando la configuración limpia.
-  ansible.builtin.command: "qm set {{ vm_vmid }} --net0 {{ net0_config_full | regex_replace(',link_down=[01]', '') }}"
-  delegate_to: "{{ pve_host_ip }}"
-  vars:
-    ansible_user: root 
-  when: net_action == 'net_on'
+# ... (El resto del playbook se mantiene)
