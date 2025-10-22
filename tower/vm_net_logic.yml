@@ -1,67 +1,69 @@
-# Archivo: vm_net_logic.yml
+# File: vm_net_logic.yml
 ---
-# Tarea 1a: Obtener la configuración de red de la VM usando 'qm config'
-- name: "1a. Obtener la línea de configuración de net0"
+# Task 1a: Get current VM network configuration via SSH
+- name: "1a. Get net0 configuration line"
   ansible.builtin.shell: "qm config {{ vm_vmid }} | grep net0"
   delegate_to: "{{ pve_host_ip }}"
   vars:
     ansible_user: root
   register: qm_config_output
   
-- name: "1b. Extraer, limpiar y determinar el estado actual"
+# Task 1b: Process and clean configuration to determine status
+- name: "1b. Extract, clean, and determine current state"
   ansible.builtin.set_fact:
+    # Full configuration line (e.g., virtio=...,bridge=...,tag=6)
     net0_config_full: "{{ qm_config_output.stdout | regex_replace('^net0: ', '') | trim }}"
-    # Determina si está apagada (link_down=1) o encendida (ausente/link_down=0)
+    # Check if 'link_down=1' exists, which means the network is currently disconnected
     is_currently_down: "{{ 'link_down=1' in qm_config_output.stdout }}"
-    # Crea la configuración limpia (sin link_down) para encender
+    # Clean configuration (removes existing link_down=0 or link_down=1)
     net0_config_clean: "{{ qm_config_output.stdout | regex_replace('^net0: ', '') | regex_replace(',link_down=[01]', '') | trim }}"
 
 # ----------------------------------------------------
-# A. LÓGICA NET_OFF (Apagar)
+# A. LOGIC: NET_OFF (Disconnect)
 # ----------------------------------------------------
-- name: "2a. [NET_OFF] Desconectar la tarjeta de red (Apagar)"
+- name: "2a. [NET_OFF] Execute: Disconnect network (set link_down=1)"
   ansible.builtin.command: "qm set {{ vm_vmid }} --net0 {{ net0_config_clean }},link_down=1"
   delegate_to: "{{ pve_host_ip }}"
   vars:
-    ansible_user: root 
+    ansible_user: root
   when: 
     - net_action == 'net_off'
-    - not is_currently_down # Solo actuar si actualmente está ENCENDIDA (no down)
+    - not is_currently_down # ONLY act if it is currently UP
   register: net_action_result
 
-- name: "2b. [NET_OFF] Notificar: Ya estaba apagada"
+- name: "2b. [NET_OFF] Notify: Network was already OFF"
   ansible.builtin.debug:
-    msg: " La red de {{ vm_name | upper }} ya estaba APAGADA (link_down=1). No se realizó ningún cambio."
+    msg: "WARNING: Network for {{ vm_name | upper }} was already OFF (link_down=1). No change was made."
   when: 
     - net_action == 'net_off'
-    - is_currently_down # Notificar si ya estaba APAGADA
+    - is_currently_down # Notify if it was already DOWN
 
 # ----------------------------------------------------
-# B. LÓGICA NET_ON (Encender)
+# B. LOGIC: NET_ON (Connect)
 # ----------------------------------------------------
-- name: "3a. [NET_ON] Conectar la tarjeta de red (Encender)"
+- name: "3a. [NET_ON] Execute: Connect network (remove link_down)"
   ansible.builtin.command: "qm set {{ vm_vmid }} --net0 {{ net0_config_clean }}"
   delegate_to: "{{ pve_host_ip }}"
   vars:
-    ansible_user: root 
+    ansible_user: root
   when: 
     - net_action == 'net_on'
-    - is_currently_down # Solo actuar si actualmente está APAGADA (down)
+    - is_currently_down # ONLY act if it is currently DOWN
   register: net_action_result
 
-- name: "3b. [NET_ON] Notificar: Ya estaba encendida"
+- name: "3b. [NET_ON] Notify: Network was already ON"
   ansible.builtin.debug:
-    msg: " La red de {{ vm_name | upper }} ya estaba ENCENDIDA (link_down=0 o ausente). No se realizó ningún cambio."
+    msg: "WARNING: Network for {{ vm_name | upper }} was already ON (link_down=0 or absent). No change was made."
   when: 
     - net_action == 'net_on'
-    - not is_currently_down # Notificar si ya estaba ENCENDIDA
+    - not is_currently_down # Notify if it was already UP
 
 # ----------------------------------------------------
-# C. Notificación de Éxito (Si se realizó una acción)
+# C. Success Notification (If an action was taken)
 # ----------------------------------------------------
-- name: "4. Notificar acción completada"
+- name: "4. Notify successful action"
   ansible.builtin.debug:
-    msg: " La red de {{ vm_name | upper }} ha sido {% if net_action == 'net_off' %}APAGADA{% else %}ENCENDIDA{% endif %} con éxito."
+    msg: "SUCCESS: Network for {{ vm_name | upper }} has been {% if net_action == 'net_off' %}DISCONNECTED{% else %}CONNECTED{% endif %}."
   when: 
     - net_action_result is defined 
-    - net_action_result.changed # Solo notificar si la tarea 2a o 3a cambió algo
+    - net_action_result.changed # Only notify if the action task actually changed something
