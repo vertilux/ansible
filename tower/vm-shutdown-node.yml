@@ -1,5 +1,5 @@
 ---
-- name: Apagado Grácil de VMs por Nodo
+- name: Graceful VM Shutdown by Node
   hosts: localhost
   gather_facts: no
   
@@ -10,9 +10,9 @@
     pve_nodes: "{{ pve_group_vars.pve_nodes }}"
 
   tasks:
-    - name: Iterar sobre los nodos seleccionados y ejecutar el apagado
+    - name: Iterate over selected nodes and execute shutdown logic
       ansible.builtin.include_tasks: shutdown_node_logic.yml
-      # La variable 'target_pve_nodes' es la lista del Survey (['pve50', 'pve70', ...])
+      # 'target_pve_nodes' es la lista del Survey (e.g., ['pve50', 'pve70'])
       loop: "{{ target_pve_nodes }}"
       loop_control:
         loop_var: current_node_name
