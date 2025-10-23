@@ -29,9 +29,9 @@
     msg: "INFO: No VMs found configured on node '{{ current_node_name }}'. Skipping this node."
   when: is_node_valid and vms_on_target_node | length == 0
 
-# --- SHUTDOWN LOOP LOGIC (Final Syntax Correction) ---
-# CLAVE: Un guion para iniciar la Tarea/Block
-- block:
+# --- SHUTDOWN LOOP LOGIC (Utiliza la estructura probada de bucle anidado) ---
+- name: 2. Iterate and Shutdown Each VM on Node {{ current_node_name | upper }}
+  ansible.builtin.block:
     - name: '2a. Set loop variables (vm_name, vmid)'
       ansible.builtin.set_fact:
         vm_name: "{{ item.key }}"
@@ -49,6 +49,7 @@
       delegate_to: "{{ target_node_ip }}"
       vars:
         ansible_user: root
+      # Ejecuta el shutdown solo si el estado es 'running' (grácil)
       when: "'status: running' in qm_status_output.stdout"
       register: shutdown_result
       
