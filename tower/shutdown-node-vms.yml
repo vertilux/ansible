@@ -1,92 +1,89 @@
 ---
 - name: Shutdown all VMs on a chosen Proxmox node
   hosts: localhost
-  gather_facts: false
+  gather_facts: no
 
-  # Estas dos variables llegan por Survey:
-  # - pve_node_choice: pve20|pve30|pve50|pve70|pve80
-  # - grace_seconds: segundos de gracia antes del stop forzado
   vars:
-    pve_node: "{{ pve_node_choice | default('') }}"
-    grace_seconds: "{{ (grace_seconds | default(120)) | int }}"
-
-    # Leemos los mapas que ya tienes en inventory/group_vars
-    # (proxmox_vms y pve_nodes). Si están en group_vars/ALL o pve,
-    # Ansible los ve sin más; estas líneas solo garantizan el acceso.
-    proxmox_vms_all: "{{ hostvars['localhost'].proxmox_vms | default(proxmox_vms, true) | default({}) }}"
-    pve_nodes_all:   "{{ hostvars['localhost'].pve_nodes   | default(pve_nodes,   true) | default({}) }}"
+    # Survey must provide this: pve_node in [pve20, pve30, pve50, pve70, pve80]
+    pve_node: "{{ pve_node | default('') }}"
+    # segundos entre apagados de cada instancia (VM/CT)
+    per_shutdown_delay: 2
+    # espera total (segundos) a que una VM/CT se apague
+    per_instance_timeout: 60
 
   pre_tasks:
-    - name: Validate node exists in pve_nodes
+    - name: Validate pve_nodes is present in inventory
       assert:
         that:
-          - pve_node != ''
-          - pve_node in pve_nodes_all.keys()
-          - proxmox_vms_all | length > 0
-        fail_msg: "Survey must provide a valid Proxmox node (pve20/pve30/pve50/pve70/pve80) and inventory must expose proxmox_vms/pve_nodes."
+          - pve_nodes is defined
+          - pve_nodes | length > 0
+        fail_msg: "Inventory must define 'pve_nodes' map (node -> IP)."
 
-    - name: Collect VMIDs that live on the chosen node
-      set_fact:
-        vms_on_node: >-
-          {{ proxmox_vms_all
-             | dict2items
-             | selectattr('value.pve_node','equalto', pve_node)
-             | map(attribute='value.vmid')
-             | list | sort }}
+    - name: Validate survey node
+      assert:
+        that:
+          - pve_node | length > 0
+          - pve_node in (pve_nodes.keys() | list)
+        fail_msg: "Survey must provide a valid Proxmox node (pve20/pve30/pve50/pve70/pve80)."
 
-    - name: Show plan
+    - name: Show target node and IP
       debug:
-        msg: "Node={{ pve_node }} -> VMIDs={{ vms_on_node | join(', ') }} | grace={{ grace_seconds }}s"
+        msg: "Target node={{ pve_node }} at {{ pve_nodes[pve_node] }}"
 
   tasks:
-    - name: Shutdown VM {{ item }} on {{ pve_node }}
-      delegate_to: "{{ pve_nodes_all[pve_node] }}"
+    - name: Get list of running VMs
+      delegate_to: "{{ pve_nodes[pve_node] }}"
       become: true
-      vars:
-        # Evita prompts de host key al delegar por SSH
-        ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
       shell: |
-        set -euo pipefail
+        set -e
+        qm list | awk '/running/ {print $1}'
+      register: running_vms
+      changed_when: false
 
-        # Si ya está parada, no hacemos nada
-        if ! qm status {{ item }} | grep -q 'status: running'; then
-          echo "already stopped"
-          exit 0
-        fi
+    - name: Get list of running containers
+      delegate_to: "{{ pve_nodes[pve_node] }}"
+      become: true
+      shell: |
+        set -e
+        pct list | awk '/running/ {print $1}'
+      register: running_cts
+      changed_when: false
+      failed_when: false  # por si no hay LXC o pct no está instalado
 
-        # Intento elegante
-        qm shutdown {{ item }} --timeout {{ grace_seconds }} || true
-
-        # Espera/poll en intervalos de 5s durante ~grace_seconds + 30s
-        for i in $(seq 1 $(( {{ (grace_seconds/5) | round(0,'ceil') | int }} + 6 )) ); do
-          sleep 5
-          if qm status {{ item }} | grep -q 'status: stopped'; then
-            echo "stopped gracefully"
-            exit 0
-          fi
-        done
-
-        # Último recurso
-        qm stop {{ item }}
-
-        # Chequeo final corto
-        for i in $(seq 1 6); do
-          sleep 5
-          if qm status {{ item }} | grep -q 'status: stopped'; then
-            echo "stopped forcefully"
-            exit 0
-          fi
-        done
-
-        echo "failed to stop"
-        exit 1
-      register: shut
-      changed_when: true
-      failed_when: shut.rc != 0
-      loop: "{{ vms_on_node }}"
-      loop_control:
-        label: "vmid={{ item }}"
-
-    - name: Summary
+    - name: Show what is running on {{ pve_node }}
       debug:
-        msg: "Shutdown attempted on node {{ pve_node }} for {{ vms_on_node | length }} VMs: {{ vms_on_node | join(', ') }}"
+        msg: |
+          Node: {{ pve_node }}
+          Running VMs: {{ running_vms.stdout_lines | default([]) }}
+          Running CTs: {{ running_cts.stdout_lines | default([]) }}
+
+    - name: Shutdown each VM gracefully (async fire-and-forget)
+      delegate_to: "{{ pve_nodes[pve_node] }}"
+      become: true
+      shell: |
+        qm shutdown {{ item }} --timeout {{ per_instance_timeout }} || true
+        sleep {{ per_shutdown_delay }}
+      loop: "{{ running_vms.stdout_lines | default([]) }}"
+      loop_control:
+        label: "VM {{ item }}"
+      async: "{{ per_instance_timeout + 10 }}"
+      poll: 0
+      when: (running_vms.stdout_lines | default([])) | length > 0
+
+    - name: Shutdown each CT gracefully (async fire-and-forget)
+      delegate_to: "{{ pve_nodes[pve_node] }}"
+      become: true
+      shell: |
+        pct shutdown {{ item }} --timeout {{ per_instance_timeout }} || true
+        sleep {{ per_shutdown_delay }}
+      loop: "{{ running_cts.stdout_lines | default([]) }}"
+      loop_control:
+        label: "CT {{ item }}"
+      async: "{{ per_instance_timeout + 10 }}"
+      poll: 0
+      when: (running_cts.stdout_lines | default([])) | length > 0
+
+    # Opcional: espera final corta
+    - name: Short grace period
+      wait_for:
+        timeout: 5
