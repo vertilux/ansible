@@ -4,14 +4,19 @@
   gather_facts: no
 
   vars:
-    # Survey must provide this: pve_node in [pve20, pve30, pve50, pve70, pve80]
-    pve_node: "{{ pve_node | default('') }}"
-    # segundos entre apagados de cada instancia (VM/CT)
-    per_shutdown_delay: 2
-    # espera total (segundos) a que una VM/CT se apague
-    per_instance_timeout: 60
+    # tiempos
+    per_shutdown_delay: 2           # seg entre cada VM/CT
+    per_instance_timeout: 60        # seg de timeout por VM/CT
 
   pre_tasks:
+    - name: Capture survey var safely (pve_node)
+      set_fact:
+        selected_node: "{{ vars['pve_node'] | default('', true) | string | trim }}"
+
+    - name: Show what Survey provided
+      debug:
+        msg: "pve_node received='{{ selected_node }}'"
+
     - name: Validate pve_nodes is present in inventory
       assert:
         that:
@@ -22,43 +27,39 @@
     - name: Validate survey node
       assert:
         that:
-          - pve_node | length > 0
-          - pve_node in (pve_nodes.keys() | list)
-        fail_msg: "Survey must provide a valid Proxmox node (pve20/pve30/pve50/pve70/pve80)."
+          - selected_node | length > 0
+          - selected_node in (pve_nodes.keys() | list)
+        fail_msg: "Survey must provide a valid node (pve20/pve30/pve50/pve70/pve80)."
 
     - name: Show target node and IP
       debug:
-        msg: "Target node={{ pve_node }} at {{ pve_nodes[pve_node] }}"
+        msg: "Target node={{ selected_node }} at {{ pve_nodes[selected_node] }}"
 
   tasks:
-    - name: Get list of running VMs
-      delegate_to: "{{ pve_nodes[pve_node] }}"
+    - name: List running VMs
+      delegate_to: "{{ pve_nodes[selected_node] }}"
       become: true
-      shell: |
-        set -e
-        qm list | awk '/running/ {print $1}'
+      shell: "qm list | awk '/running/ {print $1}'"
       register: running_vms
       changed_when: false
 
-    - name: Get list of running containers
-      delegate_to: "{{ pve_nodes[pve_node] }}"
+    - name: List running containers (LXC)
+      delegate_to: "{{ pve_nodes[selected_node] }}"
       become: true
-      shell: |
-        set -e
-        pct list | awk '/running/ {print $1}'
+      shell: "pct list | awk '/running/ {print $1}'"
       register: running_cts
       changed_when: false
-      failed_when: false  # por si no hay LXC o pct no está instalado
+      failed_when: false   # por si no hay LXC o pct
 
-    - name: Show what is running on {{ pve_node }}
+    - name: What is running
       debug:
         msg: |
-          Node: {{ pve_node }}
+          Node: {{ selected_node }}
           Running VMs: {{ running_vms.stdout_lines | default([]) }}
           Running CTs: {{ running_cts.stdout_lines | default([]) }}
 
-    - name: Shutdown each VM gracefully (async fire-and-forget)
-      delegate_to: "{{ pve_nodes[pve_node] }}"
+    - name: Shutdown each VM (graceful, async)
+      delegate_to: "{{ pve_nodes[selected_node] }}"
       become: true
       shell: |
         qm shutdown {{ item }} --timeout {{ per_instance_timeout }} || true
@@ -70,8 +71,8 @@
       poll: 0
       when: (running_vms.stdout_lines | default([])) | length > 0
 
-    - name: Shutdown each CT gracefully (async fire-and-forget)
-      delegate_to: "{{ pve_nodes[pve_node] }}"
+    - name: Shutdown each CT (graceful, async)
+      delegate_to: "{{ pve_nodes[selected_node] }}"
       become: true
       shell: |
         pct shutdown {{ item }} --timeout {{ per_instance_timeout }} || true
@@ -83,7 +84,6 @@
       poll: 0
       when: (running_cts.stdout_lines | default([])) | length > 0
 
-    # Opcional: espera final corta
     - name: Short grace period
       wait_for:
         timeout: 5
