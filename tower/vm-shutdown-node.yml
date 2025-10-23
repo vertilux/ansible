@@ -8,65 +8,11 @@
     pve_group_vars: "{{ hostvars['pve20'] }}" 
     vms_data: "{{ pve_group_vars.proxmox_vms }}"
     pve_nodes: "{{ pve_group_vars.pve_nodes }}"
-    
-    # 1. Filtra las VMs: Selecciona solo las que pertenecen al nodo proporcionado por el usuario
-    vms_on_target_node: >
-      {% set filtered_vms = {} %}
-      {% for vm_name, details in vms_data.items() %}
-        {% if details.pve_node | lower == target_pve_node | lower %}
-          {% set _ = filtered_vms.update({vm_name: details}) %}
-        {% endif %}
-      {% endfor %}
-      {{ filtered_vms }}
-      
-    # Obtiene la IP del nodo Proxmox de destino para delegar comandos SSH
-    target_node_ip: "{{ pve_nodes[target_pve_node | lower] }}"
 
   tasks:
-    - name: 1. Validar el nodo de destino y las VMs
-      ansible.builtin.block:
-        - name: '1a. Verificar que el nodo de destino exista en el inventario'
-          ansible.builtin.fail:
-            msg: "FAILURE: The node '{{ target_pve_node }}' is not defined in the PVE nodes inventory."
-          when: target_pve_node | lower not in pve_nodes
-          
-        - name: '1b. Verificar que haya VMs configuradas para apagar'
-          ansible.builtin.fail:
-            msg: "FAILURE: No VMs found configured for maintenance on node '{{ target_pve_node }}'."
-          when: vms_on_target_node | length == 0
-
-    - name: 2. Iterar y Apagar Cada VM
-      ansible.builtin.block:
-        - name: '2a. Establecer variables de bucle para acceso'
-          ansible.builtin.set_fact:
-            vm_name: "{{ item.key }}"
-            vm_vmid: "{{ item.value.vmid }}"
-            
-        - name: '2b. Verificar el estado actual de la VM'
-          ansible.builtin.shell: "qm status {{ vm_vmid }}"
-          delegate_to: "{{ target_node_ip }}"
-          vars:
-            ansible_user: root
-          register: qm_status_output
-          
-        - name: '2c. Ejecutar Apagado Grácil (qm shutdown)'
-          ansible.builtin.command: "qm shutdown {{ vm_vmid }}"
-          delegate_to: "{{ target_node_ip }}"
-          vars:
-            ansible_user: root
-          when: "'status: running' in qm_status_output.stdout"
-          register: shutdown_result
-          
-        - name: '2d. Notificar apagado exitoso'
-          ansible.builtin.debug:
-            msg: "SUCCESS: VM '{{ vm_name | upper }}' (ID: {{ vm_vmid }}) shut down gracefully."
-          when: shutdown_result.changed
-          
-        - name: '2e. Notificar VM ya estaba detenida'
-          ansible.builtin.debug:
-            msg: "INFO: VM '{{ vm_name | upper }}' (ID: {{ vm_vmid }}) was already stopped. Skipping shutdown."
-          when: "'status: running' not in qm_status_output.stdout"
-          
-      loop: "{{ vms_on_target_node | dict2items }}"
+    - name: Iterar sobre los nodos seleccionados y ejecutar el apagado
+      ansible.builtin.include_tasks: shutdown_node_logic.yml
+      # La variable 'target_pve_nodes' es la lista del Survey (['pve50', 'pve70', ...])
+      loop: "{{ target_pve_nodes }}"
       loop_control:
-        label: "VM: {{ item.key }} (ID: {{ item.value.vmid }})"
+        loop_var: current_node_name
