@@ -1,8 +1,8 @@
-# Archivo: shutdown_node_logic.yml
+# File: shutdown_node_logic.yml
 ---
-- name: Establecer variables específicas del nodo actual
+- name: Set specific variables for the current node ({{ current_node_name | upper }})
   ansible.builtin.set_fact:
-    # 1. Filtra las VMs: Selecciona solo las que pertenecen al nodo actual del bucle
+    # 1. Filter VMs: Selects only those belonging to the current loop node
     vms_on_target_node: >
       {% set filtered_vms = {} %}
       {% for vm_name, details in vms_data.items() %}
@@ -12,36 +12,39 @@
       {% endfor %}
       {{ filtered_vms }}
       
-    # 2. Obtiene la IP del nodo Proxmox de destino para delegar comandos SSH
+    # 2. Get the IP for delegation
     target_node_ip: "{{ pve_nodes[current_node_name | lower] }}"
+    
+    # 3. Check for existence (boolean for validation)
+    is_node_valid: "{{ current_node_name | lower in pve_nodes }}"
 
-- name: 1. Validar el nodo de destino y las VMs
-  ansible.builtin.block:
-    - name: '1a. Verificar que el nodo de destino exista en el inventario'
-      ansible.builtin.fail:
-        msg: "FAILURE: The node '{{ current_node_name }}' is not defined in the PVE nodes inventory."
-      when: current_node_name | lower not in pve_nodes
-      
-    - name: '1b. Verificar que haya VMs configuradas para apagar'
-      ansible.builtin.debug:
-        msg: "INFO: No VMs found configured for maintenance on node '{{ current_node_name }}'. Skipping this node."
-      when: vms_on_target_node | length == 0
+# --- VALIDATION AND ERROR CHECKING ---
+- name: '1a. FAIL: Node does not exist in inventory'
+  ansible.builtin.fail:
+    msg: "FAILURE: The node '{{ current_node_name }}' is not defined in the PVE nodes inventory. Skipping shutdown for this node."
+  when: not is_node_valid
 
-- name: 2. Iterar y Apagar Cada VM en el Nodo {{ current_node_name | upper }}
+- name: '1b. DEBUG: No VMs found on node'
+  ansible.builtin.debug:
+    msg: "INFO: No VMs found configured on node '{{ current_node_name }}'. Skipping this node."
+  when: is_node_valid and vms_on_target_node | length == 0
+
+# --- SHUTDOWN LOOP LOGIC ---
+- name: 2. Iterate and Shutdown Each VM on Node {{ current_node_name | upper }}
   ansible.builtin.block:
-    - name: '2a. Establecer variables de bucle para acceso'
+    - name: '2a. Set loop variables (vm_name, vmid)'
       ansible.builtin.set_fact:
         vm_name: "{{ item.key }}"
         vm_vmid: "{{ item.value.vmid }}"
         
-    - name: '2b. Verificar el estado actual de la VM'
+    - name: '2b. Check current VM status via qm status'
       ansible.builtin.shell: "qm status {{ vm_vmid }}"
       delegate_to: "{{ target_node_ip }}"
       vars:
         ansible_user: root
       register: qm_status_output
       
-    - name: '2c. Ejecutar Apagado Grácil (qm shutdown)'
+    - name: '2c. Execute Graceful Shutdown (qm shutdown)'
       ansible.builtin.command: "qm shutdown {{ vm_vmid }}"
       delegate_to: "{{ target_node_ip }}"
       vars:
@@ -49,12 +52,12 @@
       when: "'status: running' in qm_status_output.stdout"
       register: shutdown_result
       
-    - name: '2d. Notificar apagado exitoso'
+    - name: '2d. Notify successful shutdown'
       ansible.builtin.debug:
         msg: "SUCCESS: VM '{{ vm_name | upper }}' (ID: {{ vm_vmid }}) shut down gracefully."
       when: shutdown_result.changed
       
-    - name: '2e. Notificar VM ya estaba detenida'
+    - name: '2e. Notify VM was already stopped'
       ansible.builtin.debug:
         msg: "INFO: VM '{{ vm_name | upper }}' (ID: {{ vm_vmid }}) was already stopped. Skipping shutdown."
       when: "'status: running' not in qm_status_output.stdout"
@@ -62,4 +65,4 @@
   loop: "{{ vms_on_target_node | dict2items }}"
   loop_control:
     label: "VM: {{ item.key }} (ID: {{ item.value.vmid }})"
-  when: vms_on_target_node | length > 0
+  when: is_node_valid and vms_on_target_node | length > 0 # Only proceed if valid and VMs exist
