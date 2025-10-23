@@ -29,9 +29,8 @@
     msg: "INFO: No VMs found configured on node '{{ current_node_name }}'. Skipping this node."
   when: is_node_valid and vms_on_target_node | length == 0
 
-# --- SHUTDOWN LOOP LOGIC (Corrected Syntax) ---
-- name: 2. Process Shutdown for VMs on Node {{ current_node_name | upper }}
-  ansible.builtin.block:
+# --- SHUTDOWN LOOP LOGIC (Final Syntax Correction) ---
+ansible.builtin.block:
     - name: '2a. Set loop variables (vm_name, vmid)'
       ansible.builtin.set_fact:
         vm_name: "{{ item.key }}"
