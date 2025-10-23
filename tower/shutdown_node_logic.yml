@@ -21,7 +21,7 @@
 # --- VALIDATION AND ERROR CHECKING ---
 - name: '1a. FAIL: Node does not exist in inventory'
   ansible.builtin.fail:
-    msg: "FAILURE: The node '{{ current_node_name }}' is not defined in the PVE nodes inventory. Skipping shutdown for this node."
+    msg: "FAILURE: The node '{{ current_node_name }}' is not defined in the PVE nodes inventory."
   when: not is_node_valid
 
 - name: '1b. DEBUG: No VMs found on node'
@@ -30,7 +30,8 @@
   when: is_node_valid and vms_on_target_node | length == 0
 
 # --- SHUTDOWN LOOP LOGIC (Final Syntax Correction) ---
-ansible.builtin.block:
+# CLAVE: Un guion para iniciar la Tarea/Block
+- block:
     - name: '2a. Set loop variables (vm_name, vmid)'
       ansible.builtin.set_fact:
         vm_name: "{{ item.key }}"
@@ -64,4 +65,4 @@ ansible.builtin.block:
   loop: "{{ vms_on_target_node | dict2items }}"
   loop_control:
     label: "VM: {{ item.key }} (ID: {{ item.value.vmid }})"
-  when: is_node_valid and vms_on_target_node | length > 0 # Only proceed if valid and VMs exist
+  when: is_node_valid and vms_on_target_node | length > 0
