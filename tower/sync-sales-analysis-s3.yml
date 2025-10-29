@@ -22,16 +22,17 @@
       - erp-wepdat
 
   tasks:
-    - name: Upload JSON files for each company to S3
-      amazon.aws.s3_sync:
+    - name: Upload JSON files for each company
+      aws_s3:
         aws_access_key: "{{ aws_access_key }}"
         aws_secret_key: "{{ aws_secret_key }}"
         bucket: "{{ bucket }}"
         region: "{{ region }}"
-        file_root: "{{ json_base_path }}/{{ item }}/current/public/json/"
-        key_prefix: "json/{{ item }}"
+        mode: put
         permission: public-read
-        include: "*.json"
+        object: "json/{{ item }}/"
+        src: "{{ json_base_path }}/{{ item }}/current/public/json/"
+        recurse: yes
       loop: "{{ companies }}"
       ignore_errors: yes
       register: s3_results
