@@ -45,16 +45,22 @@
       ignore_errors: yes
       register: upload_result
 
-    - name: Send Slack notification on failure
+    - name: Send Slack notification via webhook (on failure)
       when: upload_result.failed
-      community.general.slack:
-        token: "{{ slack_token }}"
-        color: danger
-        msg: ":x: JSON sync to AWS S3 failed for one or more companies."
+      uri:
+        url: "{{ slack_webhook_url }}"
+        method: POST
+        body_format: json
+        body:
+          text: ":x: JSON sync to AWS S3 failed for one or more companies."
+      ignore_errors: yes
 
-    - name: Send Slack notification on success
+    - name: Send Slack notification via webhook (on success)
       when: not upload_result.failed
-      community.general.slack:
-        token: "{{ slack_token }}"
-        color: good
-        msg: ":white_check_mark: JSON files successfully synchronized to AWS S3."
+      uri:
+        url: "{{ slack_webhook_url }}"
+        method: POST
+        body_format: json
+        body:
+          text: ":white_check_mark: JSON files successfully synchronized to AWS S3."
+      ignore_errors: yes
