@@ -1,16 +1,13 @@
 ---
-- name: Upload JSON analysis files for all companies to AWS S3
+- name: Sync all JSON files for all companies to AWS S3
   hosts: all
   become: yes
   gather_facts: no
 
   vars:
     region: "us-east-1"
-    json_path: "/home/deploy/{{ item }}/current/public/json/"
-    key_prefix: "json"
-    permission: "public-read"
-
-    # Lista de compañías a sincronizar
+    slack_token: "{{ slack_token }}"
+    json_base_path: "/home/deploy"
     companies:
       - erp-accltd
       - erp-bzidat
@@ -24,45 +21,36 @@
       - erp-wepdat
 
   tasks:
-
-    - name: Upload JSON files to AWS S3 for each company
+    - name: Upload JSONs for each company to S3
       amazon.aws.s3_sync:
-        aws_access_key: "{{ aws_access_key }}"
-        aws_secret_key: "{{ aws_secret_key }}"
-        bucket: "{{ bucket }}"
+        bucket: "verticloud"
         region: "{{ region }}"
-        file_root: "{{ json_path }}"
-        key_prefix: "{{ key_prefix }}"
-        permission: "{{ permission }}"
+        file_root: "{{ json_base_path }}/{{ item }}/current/public/json/"
+        key_prefix: "json/{{ item }}"
+        permission: public-read
         include: "*.json"
       loop: "{{ companies }}"
+      ignore_errors: yes
       register: s3_results
-      ignore_errors: true
-      tags: sync
 
-    - name: Display upload summary
-      debug:
-        msg: >
-          Upload finished for {{ item.item }} → 
-          changed={{ item.changed | default(false) }},
-          failed={{ item.failed | default(false) }}
-      loop: "{{ s3_results.results }}"
-      tags: report
-
-    - name: Send Slack notification on success
+    - name: Notify on failure
+      when: s3_results.results | selectattr('failed', 'defined') | list | length > 0
       community.general.slack:
         token: "{{ slack_token }}"
-        msg: ":white_check_mark: JSON synchronization completed successfully for all companies."
-        color: "good"
-        channel: "#it-alerts"
-      when: s3_results is defined and (s3_results.results | selectattr('failed','equalto',false) | list | length) > 0
-      ignore_errors: true
+        msg: |
+          ⚠️ Some JSON syncs failed:
+          {% for r in s3_results.results if r.failed is defined %}
+          - {{ r.item }} → failed
+          {% endfor %}
+        color: danger
 
-    - name: Send Slack notification on failure
+    - name: Notify on success
+      when: s3_results.results | selectattr('failed', 'undefined') | list | length > 0
       community.general.slack:
         token: "{{ slack_token }}"
-        msg: ":x: One or more JSON synchronizations failed. Please check the AWX job output."
-        color: "danger"
-        channel: "#it-alerts"
-      when: s3_results is defined and (s3_results.results | selectattr('failed','equalto',true) | list | length) > 0
-      ignore_errors: true
+        msg: |
+          ✅ JSON sync completed successfully for:
+          {% for r in s3_results.results if r.failed is not defined %}
+          - {{ r.item }}
+          {% endfor %}
+        color: good
