@@ -1,13 +1,16 @@
 ---
-- name: Upload all company JSON analysis files to AWS S3
+- name: Upload JSON analysis files for all companies to AWS S3
   hosts: all
   become: yes
   gather_facts: no
-  serial: 1
 
   vars:
     region: "us-east-1"
-    json_root: "/home/deploy"
+    json_path: "/home/deploy/{{ item }}/current/public/json/"
+    key_prefix: "json"
+    permission: "public-read"
+
+    # Lista de compañías a sincronizar
     companies:
       - erp-accltd
       - erp-bzidat
@@ -22,45 +25,44 @@
 
   tasks:
 
-    - name: Find JSON files for each company
-      ansible.builtin.find:
-        paths: "{{ json_root }}/{{ item }}/current/public/json/"
-        patterns: "*.json"
-      loop: "{{ companies }}"
-      register: found_files
-
-    - name: Upload JSON files to AWS S3
-      aws_s3:
+    - name: Upload JSON files to AWS S3 for each company
+      amazon.aws.s3_sync:
         aws_access_key: "{{ aws_access_key }}"
         aws_secret_key: "{{ aws_secret_key }}"
         bucket: "{{ bucket }}"
         region: "{{ region }}"
-        mode: put
-        permission: public-read
-        src: "{{ file_item.path }}"
-        object: "json/{{ item.item }}/{{ file_item.path | basename }}"
-      loop: "{{ found_files.results | subelements('files') }}"
-      loop_control:
-        label: "{{ file_item.path }}"
-      ignore_errors: yes
-      register: upload_result
+        file_root: "{{ json_path }}"
+        key_prefix: "{{ key_prefix }}"
+        permission: "{{ permission }}"
+        include: "*.json"
+      loop: "{{ companies }}"
+      register: s3_results
+      ignore_errors: true
+      tags: sync
 
-    - name: Send Slack notification via webhook (on failure)
-      when: upload_result.failed
-      uri:
-        url: "{{ slack_webhook_url }}"
-        method: POST
-        body_format: json
-        body:
-          text: ":x: JSON sync to AWS S3 failed for one or more companies."
-      ignore_errors: yes
+    - name: Display upload summary
+      debug:
+        msg: >
+          Upload finished for {{ item.item }} → 
+          changed={{ item.changed | default(false) }},
+          failed={{ item.failed | default(false) }}
+      loop: "{{ s3_results.results }}"
+      tags: report
 
-    - name: Send Slack notification via webhook (on success)
-      when: not upload_result.failed
-      uri:
-        url: "{{ slack_webhook_url }}"
-        method: POST
-        body_format: json
-        body:
-          text: ":white_check_mark: JSON files successfully synchronized to AWS S3."
-      ignore_errors: yes
+    - name: Send Slack notification on success
+      community.general.slack:
+        token: "{{ slack_token }}"
+        msg: ":white_check_mark: JSON synchronization completed successfully for all companies."
+        color: "good"
+        channel: "#it-alerts"
+      when: s3_results is defined and (s3_results.results | selectattr('failed','equalto',false) | list | length) > 0
+      ignore_errors: true
+
+    - name: Send Slack notification on failure
+      community.general.slack:
+        token: "{{ slack_token }}"
+        msg: ":x: One or more JSON synchronizations failed. Please check the AWX job output."
+        color: "danger"
+        channel: "#it-alerts"
+      when: s3_results is defined and (s3_results.results | selectattr('failed','equalto',true) | list | length) > 0
+      ignore_errors: true
