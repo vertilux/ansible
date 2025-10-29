@@ -1,31 +1,59 @@
-- hosts: all
+---
+- name: Sync all JSON files to AWS S3 (single bucket)
+  hosts: all
+  become: yes
+  gather_facts: no
+
+  vars:
+    region: "us-east-1"
+    bucket: "erp-accpac"
+    slack_token: "{{ slack_token }}"
+    json_base_path: "/home/deploy"
+    companies:
+      - erp-accltd
+      - erp-bzidat
+      - erp-espdat
+      - erp-mxpdat
+      - erp-pwcdat
+      - erp-rdmdat
+      - erp-saldat
+      - erp-covdat
+      - erp-prndat
+      - erp-wepdat
+
   tasks:
-  - name: Upload files
-    s3_sync:
-      aws_access_key: '{{aws_access_key}}'
-      aws_secret_key: '{{aws_secret_key}}'
-      bucket: '{{bucket}}'
-      region: 'us-east-1'
-      file_root: "/home/deploy/{{site}}/current/public/json/"
-      key_prefix: "json"
-      permission: public-read
-      include: "*"
-      #exclude: "*.txt,.*"
-    ignore_errors: yes
-    register: result
+    - name: Upload JSON files for each company to S3
+      amazon.aws.s3_sync:
+        aws_access_key: "{{ aws_access_key }}"
+        aws_secret_key: "{{ aws_secret_key }}"
+        bucket: "{{ bucket }}"
+        region: "{{ region }}"
+        file_root: "{{ json_base_path }}/{{ item }}/current/public/json/"
+        key_prefix: "json/{{ item }}"
+        permission: public-read
+        include: "*.json"
+      loop: "{{ companies }}"
+      ignore_errors: yes
+      register: s3_results
 
-  - block:
-    - name: Send notification message via Slack all options on FAILED
-      slack:
-        token: '{{slack_token}}'
+    - name: Notify Slack on failure
+      when: s3_results.results | selectattr('failed', 'defined') | list | length > 0
+      community.general.slack:
+        token: "{{ slack_token }}"
+        msg: |
+          ⚠️ Some JSON syncs failed:
+          {% for r in s3_results.results if r.failed is defined %}
+          - {{ r.item }} → failed
+          {% endfor %}
         color: danger
-        msg: 'Sales analysis files synchronization failed with AWS S3 :-('
-    when: result.failed == true
 
-  - block:
-    - name: Send notification message via Slack all options on SUCCESS
-      slack:
-        token: '{{slack_token}}'
+    - name: Notify Slack on success
+      when: s3_results.results | selectattr('failed', 'undefined') | list | length > 0
+      community.general.slack:
+        token: "{{ slack_token }}"
+        msg: |
+          ✅ JSON sync completed successfully for:
+          {% for r in s3_results.results if r.failed is not defined %}
+          - {{ r.item }}
+          {% endfor %}
         color: good
-        msg: 'Sales analysis files successfully synchronizing to AWS S3 :-)'
-    when: result.failed == false
