@@ -1,0 +1,79 @@
+---
+- name: Sync all sales analysis JSON files to AWS S3
+  hosts: app_servers
+  become: yes
+  gather_facts: no
+
+  vars:
+    # AWS credentials and Slack token will come as Extra Vars or AWX Credentials
+    aws_region: "us-east-1"
+    bucket: "{{ bucket | default('vertisales-data') }}"
+    slack_channel: "#sales-sync"
+    slack_token: "{{ slack_token }}"  # from AWX
+    aws_access_key: "{{ aws_access_key }}"  # from AWX
+    aws_secret_key: "{{ aws_secret_key }}"  # from AWX
+
+    # List of all company sites to sync
+    companies:
+      - erp-accltd
+      - erp-bzidat
+      - erp-espdat
+      - erp-mxpdat
+      - erp-pwcdat
+      - erp-rdmdat
+      - erp-saldat
+      - erp-covdat
+      - erp-prndat
+      - erp-wepdat
+
+  tasks:
+
+    - name: Start synchronization
+      debug:
+        msg: "Starting S3 sync for all companies on {{ inventory_hostname }}"
+
+    - name: Upload JSON files to S3 per company
+      amazon.aws.s3_sync:
+        aws_access_key: "{{ aws_access_key }}"
+        aws_secret_key: "{{ aws_secret_key }}"
+        region: "{{ aws_region }}"
+        bucket: "{{ bucket }}"
+        file_root: "/home/deploy/{{ item }}/current/public/json/"
+        key_prefix: "json/{{ item }}"
+        permission: public-read
+        include: "*.json"
+      loop: "{{ companies }}"
+      register: sync_results
+      ignore_errors: yes
+
+    - name: Report summary to Slack
+      vars:
+        failed_companies: "{{ sync_results.results | selectattr('failed','defined') | selectattr('failed','eq', true) | map(attribute='item') | list }}"
+        successful_companies: "{{ sync_results.results | rejectattr('failed','defined') | map(attribute='item') | list }}"
+      block:
+        - name: Send success message if all passed
+          community.general.slack:
+            token: "{{ slack_token }}"
+            msg: "✅ Sales JSON sync completed successfully for {{ successful_companies | join(', ') }}"
+            color: good
+            channel: "{{ slack_channel }}"
+          when: failed_companies | length == 0
+
+        - name: Send warning if some failed
+          community.general.slack:
+            token: "{{ slack_token }}"
+            msg: |
+              ⚠️ Partial sync completed.
+              Successful: {{ successful_companies | join(', ') }}
+              Failed: {{ failed_companies | join(', ') }}
+            color: warning
+            channel: "{{ slack_channel }}"
+          when: failed_companies | length > 0 and failed_companies | length < companies | length
+
+        - name: Send failure message if all failed
+          community.general.slack:
+            token: "{{ slack_token }}"
+            msg: "❌ All S3 sync operations failed on {{ inventory_hostname }}!"
+            color: danger
+            channel: "{{ slack_channel }}"
+          when: failed_companies | length == companies | length
