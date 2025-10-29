@@ -22,17 +22,26 @@
 
   tasks:
 
-    - name: Upload all JSON files for each company to AWS S3
-      amazon.aws.s3_sync:
+    - name: Find JSON files for each company
+      ansible.builtin.find:
+        paths: "{{ json_root }}/{{ item }}/current/public/json/"
+        patterns: "*.json"
+      loop: "{{ companies }}"
+      register: found_files
+
+    - name: Upload JSON files to AWS S3
+      aws_s3:
         aws_access_key: "{{ aws_access_key }}"
         aws_secret_key: "{{ aws_secret_key }}"
         bucket: "{{ bucket }}"
         region: "{{ region }}"
-        file_root: "{{ json_root }}/{{ item }}/current/public/json/"
-        key_prefix: "json/{{ item }}"
+        mode: put
         permission: public-read
-        include: "*.json"
-      loop: "{{ companies }}"
+        src: "{{ file_item.path }}"
+        object: "json/{{ item.item }}/{{ file_item.path | basename }}"
+      loop: "{{ found_files.results | subelements('files') }}"
+      loop_control:
+        label: "{{ file_item.path }}"
       ignore_errors: yes
       register: upload_result
 
