@@ -24,9 +24,9 @@
       - erp-wepdat
 
   tasks:
-    # 1. Tarea de sincronización: El 'loop' se aplica directamente a la tarea s3_sync
+    # 1. Tarea de sincronización: Módulo corregido a community.aws.s3_sync
     - name: 🔄 S3 Sync | Upload files for each site
-      ansible.builtin.s3_sync:
+      community.aws.s3_sync:  # <-- ¡NOMBRE DEL MÓDULO CORREGIDO AQUÍ!
         aws_access_key: '{{ aws_access_key }}'
         aws_secret_key: '{{ aws_secret_key }}'
         bucket: '{{ bucket }}'
@@ -37,16 +37,14 @@
         key_prefix: "json/{{ item }}"
         permission: public-read
         include: "*"
-      # Se usa 'item' ya que estamos iterando directamente en la tarea
       loop: "{{ companies }}" 
       ignore_errors: yes
       register: s3_results
     
-    # 2. Agregar compañías fallidas a una lista (para una única notificación de fallas)
+    # 2. Agregar compañías fallidas a una lista 
     - name: 📝 Log failed synchronizations
       set_fact:
         sync_failures: "{{ sync_failures + [item.item] }}"
-      # Se itera sobre todos los resultados y se añaden los que fallaron
       loop: "{{ s3_results.results }}"
       when: item.failed
     
@@ -58,15 +56,14 @@
         msg: |
           🚨 Sales analysis synchronization **FAILED** on one or more sites (AWS S3).
           Failed sites: **{{ sync_failures | join(', ') }}**
-      # La tarea de notificación se ejecuta UNA SOLA VEZ si la lista de fallas NO está vacía
       run_once: true
       when: sync_failures | length > 0
 
-# SEGUNDO PLAY: Notificación final de éxito (solo si el primer play no tuvo errores fatales)
+# SEGUNDO PLAY: Notificación final de éxito (se ejecuta si el primer play no tuvo errores fatales)
 
 - hosts: localhost 
   tasks:
-    # 4. Notificación final de éxito (se ejecuta si el primer play fue "exitoso" con o sin fallos ignorados)
+    # 4. Notificación final de éxito 
     - name: ✅ Send SUCCESS/COMPLETION notification via Slack
       community.general.slack:
         token: '{{ slack_token }}'
