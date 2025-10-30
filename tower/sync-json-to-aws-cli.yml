@@ -1,0 +1,71 @@
+---
+- name: Sync all JSON reports to AWS S3 and notify via Slack (CLI method)
+  hosts: all
+  become: yes
+  gather_facts: no
+
+  vars:
+    aws_region: "us-east-1"
+    bucket: "erp-accpac"
+    s3_prefix: "json"
+    json_base_path: "/home/deploy"
+    companies:
+      - erp-accltd
+      - erp-bzidat
+      - erp-espdat
+      - erp-mxpdat
+      - erp-pwcdat
+      - erp-rdmdat
+      - erp-saldat
+      - erp-covdat
+      - erp-prndat
+      - erp-wepdat
+
+  tasks:
+    - name: Ensure AWS CLI is installed
+      ansible.builtin.package:
+        name: awscli
+        state: present
+      ignore_errors: yes
+
+    - name: Upload JSON files to S3 using AWS CLI
+      ansible.builtin.shell: |
+        export AWS_ACCESS_KEY_ID="{{ aws_access_key }}"
+        export AWS_SECRET_ACCESS_KEY="{{ aws_secret_key }}"
+        export AWS_DEFAULT_REGION="{{ aws_region }}"
+        aws s3 sync "{{ json_base_path }}/{{ item }}/current/public/json" "s3://{{ bucket }}/{{ s3_prefix }}/{{ item }}/" --acl public-read --delete
+      loop: "{{ companies }}"
+      register: s3_result
+      ignore_errors: yes
+
+    - name: Detect if any upload failed
+      set_fact:
+        upload_failed: "{{ s3_result.results | selectattr('rc', 'ne', 0) | list | length > 0 }}"
+
+    - name: Send Slack notification (success)
+      when: not upload_failed
+      ansible.builtin.uri:
+        url: "https://slack.com/api/chat.postMessage"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ slack_token }}"
+          Content-Type: "application/json"
+        body_format: json
+        body:
+          channel: "#devops"
+          text: "✅ Sales analysis JSONs successfully synchronized to AWS S3 bucket '{{ bucket }}'."
+      ignore_errors: yes
+
+    - name: Send Slack notification (failure)
+      when: upload_failed
+      ansible.builtin.uri:
+        url: "https://slack.com/api/chat.postMessage"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ slack_token }}"
+          Content-Type: "application/json"
+        body_format: json
+        body:
+          channel: "#devops"
+          text: "❌ One or more uploads failed during AWS S3 synchronization. Please check AWX logs."
+      ignore_errors: yes
