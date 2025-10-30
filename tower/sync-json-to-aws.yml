@@ -7,6 +7,8 @@
     aws_secret_key: "{{ aws_secret_key }}"
     bucket: "{{ bucket }}"
     slack_token: "{{ slack_token }}"
+    # Se inicializa una lista de fallos
+    sync_failures: []
     
     # Lista fija de compañías (sites) a sincronizar
     companies:
@@ -22,45 +24,51 @@
       - erp-wepdat
 
   tasks:
-    # 1. Tarea principal: El LOOP ENVUELVE EL BLOQUE
-    # (El 'loop' y el 'block' NO van en el mismo nivel horizontal)
-    - name: LOOP | Synchronize sales analysis files for each company to AWS S3
-      # El 'loop' se aplica directamente a la tarea
-      loop: "{{ companies }}"
-      loop_control:
-        loop_var: current_site
-      
-      # El 'block' se INDENTA y contiene las tareas que se repiten
-      block:
-        - name: Upload files for site {{ current_site }}
-          ansible.builtin.s3_sync:
-            aws_access_key: '{{ aws_access_key }}'
-            aws_secret_key: '{{ aws_secret_key }}'
-            bucket: '{{ bucket }}'
-            region: 'us-east-1'
-            file_root: "/home/deploy/{{ current_site }}/current/public/json/"
-            key_prefix: "json/{{ current_site }}"
-            permission: public-read
-            include: "*"
-          ignore_errors: yes
-          # Se registra el resultado en una variable única por sitio
-          register: s3_result_{{ current_site }} 
+    # 1. Tarea de sincronización: El 'loop' se aplica directamente a la tarea s3_sync
+    - name: 🔄 S3 Sync | Upload files for each site
+      ansible.builtin.s3_sync:
+        aws_access_key: '{{ aws_access_key }}'
+        aws_secret_key: '{{ aws_secret_key }}'
+        bucket: '{{ bucket }}'
+        region: 'us-east-1'
+        # Ruta de origen dinámica
+        file_root: "/home/deploy/{{ item }}/current/public/json/"
+        # Prefijo S3 dinámico
+        key_prefix: "json/{{ item }}"
+        permission: public-read
+        include: "*"
+      # Se usa 'item' ya que estamos iterando directamente en la tarea
+      loop: "{{ companies }}" 
+      ignore_errors: yes
+      register: s3_results
+    
+    # 2. Agregar compañías fallidas a una lista (para una única notificación de fallas)
+    - name: 📝 Log failed synchronizations
+      set_fact:
+        sync_failures: "{{ sync_failures + [item.item] }}"
+      # Se itera sobre todos los resultados y se añaden los que fallaron
+      loop: "{{ s3_results.results }}"
+      when: item.failed
+    
+    # 3. Notificación de Slack solo si hubo fallas
+    - name: 🚨 Send FAILED notification for all failed sites via Slack
+      community.general.slack:
+        token: '{{ slack_token }}'
+        color: danger
+        msg: |
+          🚨 Sales analysis synchronization **FAILED** on one or more sites (AWS S3).
+          Failed sites: **{{ sync_failures | join(', ') }}**
+      # La tarea de notificación se ejecuta UNA SOLA VEZ si la lista de fallas NO está vacía
+      run_once: true
+      when: sync_failures | length > 0
 
-        # 2. Notificación de Slack solo si falla la sincronización
-        - name: Send FAILED notification for site {{ current_site }} via Slack
-          community.general.slack:
-            token: '{{ slack_token }}'
-            color: danger
-            msg: "🚨 FAILED sync for **{{ current_site }}**."
-          # Se evalúa el registro dinámico
-          when: "hostvars[inventory_hostname]['s3_result_' + current_site ].failed"
-          # La tarea se ejecuta, pero la notificación solo se envía si falla la condición 'when'
+# SEGUNDO PLAY: Notificación final de éxito (solo si el primer play no tuvo errores fatales)
 
-# SEGUNDO PLAY: Notificación final de éxito
 - hosts: localhost 
   tasks:
-    - name: Send SUCCESS/COMPLETION notification via Slack
+    # 4. Notificación final de éxito (se ejecuta si el primer play fue "exitoso" con o sin fallos ignorados)
+    - name: ✅ Send SUCCESS/COMPLETION notification via Slack
       community.general.slack:
         token: '{{ slack_token }}'
         color: good
-        msg: '✅ Sales analysis files successfully synchronized for **all companies** to AWS S3.'
+        msg: '✅ Sales analysis files successfully synchronized ({{ companies | length }} attempts) to AWS S3.'
