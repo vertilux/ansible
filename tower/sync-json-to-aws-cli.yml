@@ -27,8 +27,10 @@
         fail_msg: "AWS credentials are missing. Make sure the AWS credential is attached to this template."
         success_msg: "AWS credentials detected and available."
 
-    - name: Upload JSON files to S3 using AWS CLI for each company
+     - name: Upload JSON files to S3 using AWS CLI for each company
       shell: >
+        export AWS_ACCESS_KEY_ID={{ lookup('env', 'AWS_ACCESS_KEY_ID') }};
+        export AWS_SECRET_ACCESS_KEY={{ lookup('env', 'AWS_SECRET_ACCESS_KEY') }};
         aws s3 sync /home/deploy/{{ item }}/current/public/json
         s3://{{ bucket }}/json/{{ item }}/
         --region us-east-1
