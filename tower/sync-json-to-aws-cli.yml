@@ -1,14 +1,13 @@
 ---
-- name: Sync all JSON reports to AWS S3 and notify via Slack (CLI method)
+- name: Sync all JSON reports to AWS S3 and notify via Slack (CLI + Debug)
   hosts: all
   become: yes
-  gather_facts: no
-
   vars:
-    aws_region: "us-east-1"
-    bucket: "erp-accpac"
-    s3_prefix: "json"
-    json_base_path: "/home/deploy"
+    aws_access_key: "{{ lookup('env', 'AWS_ACCESS_KEY_ID') }}"
+    aws_secret_key: "{{ lookup('env', 'AWS_SECRET_ACCESS_KEY') }}"
+    bucket: erp-accpac
+    slack_token: "{{ lookup('env', 'SLACK_TOKEN') }}"
+    slack_channel: "#devops"
     companies:
       - erp-accltd
       - erp-bzidat
@@ -21,50 +20,61 @@
       - erp-prndat
 
   tasks:
-    - name: Ensure AWS CLI is installed
-      ansible.builtin.package:
-        name: awscli
-        state: present
-      ignore_errors: yes
-
-    - name: Upload JSON files to S3 using AWS CLI
-      ansible.builtin.shell: |
-        export AWS_ACCESS_KEY_ID="{{ aws_access_key }}"
-        export AWS_SECRET_ACCESS_KEY="{{ aws_secret_key }}"
-        export AWS_DEFAULT_REGION="{{ aws_region }}"
-        aws s3 sync "{{ json_base_path }}/{{ item }}/current/public/json" "s3://{{ bucket }}/{{ s3_prefix }}/{{ item }}/" --acl public-read --delete
+    - name: Upload JSON files to S3 using AWS CLI for each company
+      shell: >
+        aws s3 sync /home/deploy/{{ item }}/current/public/json
+        s3://{{ bucket }}/json/{{ item }}/
+        --region us-east-1
+        --acl public-read
+        --delete
+      environment:
+        AWS_ACCESS_KEY_ID: "{{ aws_access_key }}"
+        AWS_SECRET_ACCESS_KEY: "{{ aws_secret_key }}"
+      register: upload_result
       loop: "{{ companies }}"
-      register: s3_result
-      ignore_errors: yes
+      ignore_errors: true
 
-    - name: Detect if any upload failed
+    - name: Determine overall upload result
       set_fact:
-        upload_failed: "{{ s3_result.results | selectattr('rc', 'ne', 0) | list | length > 0 }}"
+        upload_failed: "{{ upload_result is failed or upload_result.results | selectattr('rc', 'ne', 0) | list | length > 0 }}"
 
-    - name: Send Slack notification (success)
-      when: not upload_failed
+    - name: Print summary of uploaded companies
+      debug:
+        msg: |
+          ✅ Successful uploads:
+          {{ upload_result.results | selectattr('rc', 'eq', 0) | map(attribute='item') | list | join(', ') }}
+          ❌ Failed uploads:
+          {{ upload_result.results | selectattr('rc', 'ne', 0) | map(attribute='item') | list | join(', ') }}
+
+    - name: Send Slack notification (always)
       ansible.builtin.uri:
         url: "https://slack.com/api/chat.postMessage"
         method: POST
         headers:
-          Authorization: "Bearer {{ slack_token }}"
           Content-Type: "application/json"
+          Authorization: "Bearer {{ slack_token }}"
         body_format: json
-        body:
-          channel: "#devops"
-          text: "✅ Sales analysis JSONs successfully synchronized to AWS S3 bucket '{{ bucket }}'."
-      ignore_errors: yes
+        body: >
+          {{
+            {
+              "channel": slack_channel,
+              "text": (
+                "✅ *Sales JSON synchronization successful!* :rocket:\n"
+                "All JSON files uploaded correctly to S3 bucket *" + bucket + "*."
+                if not upload_failed else
+                "⚠️ *Sales JSON synchronization failed!* :warning:\n"
+                "Some companies did not upload successfully to S3 bucket *" + bucket + "*."
+              )
+            }
+          }}
+      register: slack_response
+      ignore_errors: true
 
-    - name: Send Slack notification (failure)
-      when: upload_failed
-      ansible.builtin.uri:
-        url: "https://slack.com/api/chat.postMessage"
-        method: POST
-        headers:
-          Authorization: "Bearer {{ slack_token }}"
-          Content-Type: "application/json"
-        body_format: json
-        body:
-          channel: "#devops"
-          text: "❌ One or more uploads failed during AWS S3 synchronization. Please check AWX logs."
-      ignore_errors: yes
+    - name: Show Slack response for verification
+      debug:
+        var: slack_response
+
+    - name: Fail play if Slack API returned error
+      when: slack_response.status | default(0) != 200 or (slack_response.json.ok | default(false)) == false
+      fail:
+        msg: "Slack API error: {{ slack_response.json.error | default('unknown error') }}"
