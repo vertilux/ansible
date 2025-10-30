@@ -1,13 +1,14 @@
 ---
-- hosts: all
+- name: Sync all JSON reports to AWS S3 and notify via Slack
+  hosts: all
+  become: yes
   gather_facts: no
+
   vars:
-    aws_access_key: "{{ aws_access_key }}"
-    aws_secret_key: "{{ aws_secret_key }}"
-    bucket: "{{ bucket }}"
-    slack_token: "{{ slack_token }}"
-    sync_failures: []
-    
+    aws_region: "us-east-1"
+    bucket: "erp-accpac"
+    s3_prefix: "json"
+    json_base_path: "/home/deploy"
     companies:
       - erp-accltd
       - erp-bzidat
@@ -20,45 +21,49 @@
       - erp-prndat
       - erp-wepdat
 
-  tasks:
-    # 1. Tarea de sincronización: Módulo community.aws.s3_sync
-    - name: 🔄 S3 Sync | Upload files for each site
-      community.aws.s3_sync:
-        aws_access_key: '{{ aws_access_key }}'
-        aws_secret_key: '{{ aws_secret_key }}'
-        bucket: '{{ bucket }}'
-        region: 'us-east-1'
-        file_root: "/home/deploy/{{ item }}/current/public/json/"
-        key_prefix: "json/{{ item }}"
-        permission: public-read
-        include: "*"
-      loop: "{{ companies }}" 
+  pre_tasks:
+    - name: Install boto3 (for AWS API access)
+      ansible.builtin.pip:
+        name:
+          - boto3
+          - botocore
       ignore_errors: yes
-      register: s3_results
-    
-    # 2. Registrar las compañías que fallaron
-    - name: 📝 Log failed synchronizations
-      set_fact:
-        sync_failures: "{{ sync_failures + [item.item] }}"
-      loop: "{{ s3_results.results }}"
-      when: item.failed
-    
-    # 3. Notificación de Slack si hubo fallas
-    - name: 🚨 Send FAILED notification for all failed sites via Slack
-      community.general.slack:
-        token: '{{ slack_token }}'
-        color: danger
-        msg: |
-          🚨 Sales analysis synchronization **FAILED** on one or more sites (AWS S3).
-          Failed sites: **{{ sync_failures | join(', ') }}**
-      run_once: true
-      when: sync_failures | length > 0
 
-- hosts: localhost 
+    - name: Install required Ansible collections (AWS + Slack)
+      ansible.builtin.command: ansible-galaxy collection install amazon.aws community.general
+      ignore_errors: yes
+
   tasks:
-    # 4. Notificación final de éxito
-    - name: ✅ Send SUCCESS/COMPLETION notification via Slack
+    - name: Upload JSON files for each company to S3
+      amazon.aws.s3_sync:
+        aws_access_key: "{{ aws_access_key }}"
+        aws_secret_key: "{{ aws_secret_key }}"
+        bucket: "{{ bucket }}"
+        region: "{{ aws_region }}"
+        file_root: "{{ json_base_path }}/{{ item }}/current/public/json"
+        key_prefix: "{{ s3_prefix }}"
+        permission: public-read
+        include: "*.json"
+      loop: "{{ companies }}"
+      register: s3_result
+      ignore_errors: yes
+
+    - name: Check if any upload failed
+      set_fact:
+        upload_failed: "{{ s3_result.results | selectattr('failed','defined') | list | length > 0 }}"
+
+    - name: Send Slack notification on success
+      when: not upload_failed
       community.general.slack:
-        token: '{{ slack_token }}'
+        token: "{{ slack_token }}"
+        msg: "✅ Sales analysis JSON files successfully synchronized to AWS S3 bucket '{{ bucket }}'."
         color: good
-        msg: '✅ Sales analysis files successfully synchronized ({{ companies | length }} attempts) to AWS S3.'
+        username: "AWX Bot"
+
+    - name: Send Slack notification on failure
+      when: upload_failed
+      community.general.slack:
+        token: "{{ slack_token }}"
+        msg: "❌ Some JSON uploads failed during AWS S3 synchronization. Please check the AWX job logs."
+        color: danger
+        username: "AWX Bot"
