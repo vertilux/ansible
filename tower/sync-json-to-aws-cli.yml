@@ -3,10 +3,11 @@
   hosts: all
   become: yes
   vars:
-    aws_access_key: "{{ lookup('env', 'AWS_ACCESS_KEY_ID') }}"
-    aws_secret_key: "{{ lookup('env', 'AWS_SECRET_ACCESS_KEY') }}"
+    aws_access_key: "{{ AWS_ACCESS_KEY_ID }}"
+    aws_secret_key: "{{ AWS_SECRET_ACCESS_KEY }}"
     bucket: erp-accpac
-    webhook_url: "{{ lookup('env', 'SLACK_WEBHOOK_URL') }}"
+    slack_webhook_url: "{{ SLACK_WEBHOOK_URL }}"
+
     companies:
       - erp-accltd
       - erp-bzidat
@@ -37,29 +38,31 @@
       set_fact:
         upload_failed: "{{ upload_result is failed or upload_result.results | selectattr('rc', 'ne', 0) | list | length > 0 }}"
 
-    - name: Prepare message for Slack
+    - name: Build Slack message
       set_fact:
         slack_message: >
           {% if not upload_failed %}
           ✅ *Sales JSON synchronization successful!* 🚀
-          All JSON files uploaded correctly to S3 bucket *{{ bucket }}*.
+          All JSON files uploaded successfully to S3 bucket *{{ bucket }}*.
           {% else %}
           ⚠️ *Sales JSON synchronization failed!* 😟
-          Some companies had upload errors to S3 bucket *{{ bucket }}*.
+          Some companies had upload errors in bucket *{{ bucket }}*.
           {% endif %}
 
     - name: Send notification to Slack via webhook
       ansible.builtin.uri:
-        url: "{{ webhook_url }}"
+        url: "{{ slack_webhook_url }}"
         method: POST
         headers:
           Content-Type: "application/json"
         body_format: json
         body:
           text: "{{ slack_message }}"
-      register: slack_webhook
+      when: slack_webhook_url is defined
+      register: slack_response
       ignore_errors: true
 
     - name: Show Slack response
       debug:
-        var: slack_webhook
+        var: slack_response
+      when: slack_response is defined
