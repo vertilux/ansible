@@ -1,4 +1,4 @@
-hosts: all
+- hosts: all
   tasks:
   - name: Upload files
     s3_sync:
