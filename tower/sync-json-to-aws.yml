@@ -22,11 +22,14 @@
       - erp-wepdat
 
   tasks:
-    # 1. Iterar sobre cada compañía y sincronizar los archivos con AWS S3
-    - name: Synchronize sales analysis files for each company to AWS S3
+    # Tarea principal que envuelve el loop.
+    - name: LOOP | Synchronize sales analysis files for each company to AWS S3
+      # El 'loop' se aplica directamente al bloque de tareas
       loop: "{{ companies }}"
       loop_control:
         loop_var: current_site
+      
+      # INICIO DEL BLOQUE DE TAREAS ITERATIVO
       block:
         - name: Upload files for site {{ current_site }}
           ansible.builtin.s3_sync:
@@ -34,14 +37,15 @@
             aws_secret_key: '{{ aws_secret_key }}'
             bucket: '{{ bucket }}'
             region: 'us-east-1'
-            # Ruta de origen dinámica
+            # Ruta de origen dinámica: /home/deploy/erp-accltd/current/public/json/
             file_root: "/home/deploy/{{ current_site }}/current/public/json/"
-            # Prefijo S3 dinámico para organizar por compañía
+            # Prefijo S3 dinámico para organizar por compañía: json/erp-accltd
             key_prefix: "json/{{ current_site }}"
             permission: public-read
             include: "*"
+          # Permite que la sincronización de una compañía falle sin detener todo el playbook
           ignore_errors: yes
-          register: s3_result
+          register: s3_result_{{ current_site }} # Registro dinámico para seguimiento
 
         # 2. Notificación de Slack solo si falla la sincronización de una compañía
         - name: Send FAILED notification for site {{ current_site }} via Slack
@@ -49,11 +53,13 @@
             token: '{{ slack_token }}'
             color: danger
             msg: "🚨 Sales analysis synchronization **FAILED** for company **{{ current_site }}** (AWS S3)."
-          when: s3_result.failed
+          # Se evalúa el registro dinámico específico de la compañía
+          when: "hostvars[inventory_hostname]['s3_result_' + current_site ].failed"
+
+# SEGUNDO PLAY: Notificación final (se ejecuta si el primer play no tuvo errores fatales)
 
 - hosts: localhost # Ejecutar la notificación final localmente desde AWX/Tower
   tasks:
-    # 3. Notificación final de Slack de Éxito General
     - name: Send SUCCESS/COMPLETION notification via Slack
       community.general.slack:
         token: '{{ slack_token }}'
