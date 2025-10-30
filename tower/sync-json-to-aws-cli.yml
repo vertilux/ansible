@@ -42,8 +42,8 @@
       set_fact:
         slack_message: >
           {% if not upload_failed %}
-          ✅ *Sales analysis files synchronization to AWS S3!* 🚀
-              accltd   bzidat   espdat   mxpdat   pwcdat
+          ✅ *Sales analysis files synchronization to AWS*
+              accltd    bzidat   espdat   mxpdat   pwcdat
               rdmdat   saldat   covdat   prndat
           All JSON files uploaded successfully to S3 bucket *{{ bucket }}*.
           {% else %}
