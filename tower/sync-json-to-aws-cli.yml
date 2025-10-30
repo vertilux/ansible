@@ -7,7 +7,7 @@
     aws_secret_key: "{{ lookup('env', 'AWS_SECRET_ACCESS_KEY') }}"
     bucket: erp-accpac
     slack_token: "{{ lookup('env', 'SLACK_TOKEN') }}"
-    slack_channel: "#devops"
+    slack_channel: "#vertilux"
     companies:
       - erp-accltd
       - erp-bzidat
