@@ -1,13 +1,14 @@
 ---
-- name: Sync all JSON files for all companies to AWS S3
-  hosts: all
-  become: yes
+- hosts: all
   gather_facts: no
-
   vars:
-    region: "us-east-1"
+    # Variables de seguridad que se esperan como 'Extra Variables' en AWX/Ansible Tower
+    aws_access_key: "{{ aws_access_key }}"
+    aws_secret_key: "{{ aws_secret_key }}"
+    bucket: "{{ bucket }}"
     slack_token: "{{ slack_token }}"
-    json_base_path: "/home/deploy"
+    
+    # Lista fija de compañías (sites) a sincronizar
     companies:
       - erp-accltd
       - erp-bzidat
@@ -21,36 +22,44 @@
       - erp-wepdat
 
   tasks:
-    - name: Upload JSONs for each company to S3
-      amazon.aws.s3_sync:
-        bucket: "verticloud"
-        region: "{{ region }}"
-        file_root: "{{ json_base_path }}/{{ item }}/current/public/json/"
-        key_prefix: "json/{{ item }}"
-        permission: public-read
-        include: "*.json"
+    # 1. Iterar sobre cada compañía y sincronizar los archivos con AWS S3
+    - name: Synchronize sales analysis files for each company to AWS S3
       loop: "{{ companies }}"
-      ignore_errors: yes
-      register: s3_results
+      loop_control:
+        loop_var: current_site
+      block:
+        - name: Upload files for site {{ current_site }}
+          ansible.builtin.s3_sync:
+            aws_access_key: '{{ aws_access_key }}'
+            aws_secret_key: '{{ aws_secret_key }}'
+            bucket: '{{ bucket }}'
+            region: 'us-east-1'
+            # Ruta de origen dinámica
+            file_root: "/home/deploy/{{ current_site }}/current/public/json/"
+            # Prefijo S3 dinámico para organizar por compañía
+            key_prefix: "json/{{ current_site }}"
+            permission: public-read
+            include: "*"
+          # Permite que la sincronización de una compañía falle sin detener todo el playbook
+          ignore_errors: yes
+          register: s3_result
 
-    - name: Notify on failure
-      when: s3_results.results | selectattr('failed', 'defined') | list | length > 0
-      community.general.slack:
-        token: "{{ slack_token }}"
-        msg: |
-          ⚠️ Some JSON syncs failed:
-          {% for r in s3_results.results if r.failed is defined %}
-          - {{ r.item }} → failed
-          {% endfor %}
-        color: danger
+        # 2. Notificación de Slack solo si falla la sincronización de una compañía
+        - name: Send FAILED notification for site {{ current_site }} via Slack
+          community.general.slack:
+            token: '{{ slack_token }}'
+            color: danger
+            msg: "🚨 Sales analysis synchronization **FAILED** for company **{{ current_site }}** (AWS S3)."
+          when: s3_result.failed
 
-    - name: Notify on success
-      when: s3_results.results | selectattr('failed', 'undefined') | list | length > 0
+---
+
+- hosts: localhost # Ejecutar la notificación final localmente desde AWX/Tower
+  tasks:
+    # 3. Notificación final de Slack de Éxito General
+    - name: Send SUCCESS/COMPLETION notification via Slack
       community.general.slack:
-        token: "{{ slack_token }}"
-        msg: |
-          ✅ JSON sync completed successfully for:
-          {% for r in s3_results.results if r.failed is not defined %}
-          - {{ r.item }}
-          {% endfor %}
+        token: '{{ slack_token }}'
         color: good
+        msg: '✅ Sales analysis files successfully synchronized for **all companies** to AWS S3.'
+      # Se asume que AWX/Tower solo ejecuta este host si todo el playbook anterior fue exitoso.
