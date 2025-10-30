@@ -22,14 +22,15 @@
       - erp-wepdat
 
   tasks:
-    # Tarea principal que envuelve el loop.
+    # 1. Tarea principal: El LOOP ENVUELVE EL BLOQUE
+    # (El 'loop' y el 'block' NO van en el mismo nivel horizontal)
     - name: LOOP | Synchronize sales analysis files for each company to AWS S3
-      # El 'loop' se aplica directamente al bloque de tareas
+      # El 'loop' se aplica directamente a la tarea
       loop: "{{ companies }}"
       loop_control:
         loop_var: current_site
       
-      # INICIO DEL BLOQUE DE TAREAS ITERATIVO
+      # El 'block' se INDENTA y contiene las tareas que se repiten
       block:
         - name: Upload files for site {{ current_site }}
           ansible.builtin.s3_sync:
@@ -37,28 +38,26 @@
             aws_secret_key: '{{ aws_secret_key }}'
             bucket: '{{ bucket }}'
             region: 'us-east-1'
-            # Ruta de origen dinámica: /home/deploy/erp-accltd/current/public/json/
             file_root: "/home/deploy/{{ current_site }}/current/public/json/"
-            # Prefijo S3 dinámico para organizar por compañía: json/erp-accltd
             key_prefix: "json/{{ current_site }}"
             permission: public-read
             include: "*"
-          # Permite que la sincronización de una compañía falle sin detener todo el playbook
           ignore_errors: yes
-          register: s3_result_{{ current_site }} # Registro dinámico para seguimiento
+          # Se registra el resultado en una variable única por sitio
+          register: s3_result_{{ current_site }} 
 
-        # 2. Notificación de Slack solo si falla la sincronización de una compañía
+        # 2. Notificación de Slack solo si falla la sincronización
         - name: Send FAILED notification for site {{ current_site }} via Slack
           community.general.slack:
             token: '{{ slack_token }}'
             color: danger
-            msg: "🚨 Sales analysis synchronization **FAILED** for company **{{ current_site }}** (AWS S3)."
-          # Se evalúa el registro dinámico específico de la compañía
+            msg: "🚨 FAILED sync for **{{ current_site }}**."
+          # Se evalúa el registro dinámico
           when: "hostvars[inventory_hostname]['s3_result_' + current_site ].failed"
+          # La tarea se ejecuta, pero la notificación solo se envía si falla la condición 'when'
 
-# SEGUNDO PLAY: Notificación final (se ejecuta si el primer play no tuvo errores fatales)
-
-- hosts: localhost # Ejecutar la notificación final localmente desde AWX/Tower
+# SEGUNDO PLAY: Notificación final de éxito
+- hosts: localhost 
   tasks:
     - name: Send SUCCESS/COMPLETION notification via Slack
       community.general.slack:
