@@ -2,15 +2,12 @@
 - hosts: all
   gather_facts: no
   vars:
-    # Estas variables deben pasarse como 'Extra Variables' o Credenciales en AWX
     aws_access_key: "{{ aws_access_key }}"
     aws_secret_key: "{{ aws_secret_key }}"
     bucket: "{{ bucket }}"
     slack_token: "{{ slack_token }}"
-    # Se inicializa una lista para registrar fallos
     sync_failures: []
     
-    # Lista fija de compañías (sites) a sincronizar
     companies:
       - erp-accltd
       - erp-bzidat
@@ -24,16 +21,14 @@
       - erp-wepdat
 
   tasks:
-    # 1. Tarea de sincronización: Se itera sobre cada compañía usando 'loop' y 'item'
+    # 1. Tarea de sincronización: Módulo community.aws.s3_sync
     - name: 🔄 S3 Sync | Upload files for each site
-      community.aws.s3_sync:  # <-- Módulo corregido de la colección community.aws
+      community.aws.s3_sync:
         aws_access_key: '{{ aws_access_key }}'
         aws_secret_key: '{{ aws_secret_key }}'
         bucket: '{{ bucket }}'
         region: 'us-east-1'
-        # Ruta de origen dinámica, usando {{ item }}
         file_root: "/home/deploy/{{ item }}/current/public/json/"
-        # Prefijo S3 dinámico para organizar por compañía
         key_prefix: "json/{{ item }}"
         permission: public-read
         include: "*"
@@ -41,16 +36,14 @@
       ignore_errors: yes
       register: s3_results
     
-    # 2. Registrar las compañías que fallaron en la sincronización
+    # 2. Registrar las compañías que fallaron
     - name: 📝 Log failed synchronizations
       set_fact:
-        # Añade el nombre de la compañía (item.item) a la lista sync_failures
         sync_failures: "{{ sync_failures + [item.item] }}"
       loop: "{{ s3_results.results }}"
-      # Solo registra si la iteración falló
       when: item.failed
     
-    # 3. Notificación de Slack solo si hubo fallas (se ejecuta una vez)
+    # 3. Notificación de Slack si hubo fallas
     - name: 🚨 Send FAILED notification for all failed sites via Slack
       community.general.slack:
         token: '{{ slack_token }}'
@@ -59,17 +52,11 @@
           🚨 Sales analysis synchronization **FAILED** on one or more sites (AWS S3).
           Failed sites: **{{ sync_failures | join(', ') }}**
       run_once: true
-      # Solo se ejecuta si la lista de fallas contiene elementos
       when: sync_failures | length > 0
-
-# -----------------------------------------------------------------------------
-# SEGUNDO PLAY: Notificación final de éxito
-# Se ejecuta en localhost (AWX/Tower) después de que el primer play ha terminado
-# -----------------------------------------------------------------------------
 
 - hosts: localhost 
   tasks:
-    # 4. Notificación final de éxito (si el Play 1 no tuvo errores fatales)
+    # 4. Notificación final de éxito
     - name: ✅ Send SUCCESS/COMPLETION notification via Slack
       community.general.slack:
         token: '{{ slack_token }}'
