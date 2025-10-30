@@ -40,7 +40,6 @@
             key_prefix: "json/{{ current_site }}"
             permission: public-read
             include: "*"
-          # Permite que la sincronización de una compañía falle sin detener todo el playbook
           ignore_errors: yes
           register: s3_result
 
@@ -52,8 +51,6 @@
             msg: "🚨 Sales analysis synchronization **FAILED** for company **{{ current_site }}** (AWS S3)."
           when: s3_result.failed
 
----
-
 - hosts: localhost # Ejecutar la notificación final localmente desde AWX/Tower
   tasks:
     # 3. Notificación final de Slack de Éxito General
@@ -62,4 +59,3 @@
         token: '{{ slack_token }}'
         color: good
         msg: '✅ Sales analysis files successfully synchronized for **all companies** to AWS S3.'
-      # Se asume que AWX/Tower solo ejecuta este host si todo el playbook anterior fue exitoso.
