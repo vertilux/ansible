@@ -1,0 +1,31 @@
+hosts: all
+  tasks:
+  - name: Upload files
+    s3_sync:
+      aws_access_key: '{{aws_access_key}}'
+      aws_secret_key: '{{aws_secret_key}}'
+      bucket: '{{bucket}}'
+      region: 'us-east-1'
+      file_root: "/home/deploy/{{site}}/current/public/json/"
+      key_prefix: "json"
+      permission: public-read
+      include: "*"
+      #exclude: "*.txt,.*"
+    ignore_errors: yes
+    register: result
+
+  - block:
+    - name: Send notification message via Slack all options on FAILED
+      slack:
+        token: '{{slack_token}}'
+        color: danger
+        msg: 'Sales analysis files synchronization failed with AWS S3 :-('
+    when: result.failed == true
+
+  - block:
+    - name: Send notification message via Slack all options on SUCCESS
+      slack:
+        token: '{{slack_token}}'
+        color: good
+        msg: 'Sales analysis files successfully synchronizing to AWS S3 :-)'
+    when: result.failed == false
