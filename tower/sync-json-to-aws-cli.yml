@@ -19,7 +19,6 @@
       - erp-saldat
       - erp-covdat
       - erp-prndat
-      - erp-wepdat
 
   tasks:
     - name: Ensure AWS CLI is installed
