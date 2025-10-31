@@ -1,0 +1,107 @@
+---
+- name: Restart selected VPN connections from UniFi Controller
+  hosts: localhost
+  gather_facts: no
+
+  vars:
+    unifi_url: "https://10.255.255.1"     # Main UDM SE in Miami
+    unifi_site: "default"                 # Site name (from API)
+    vpn_list: []                          # Filled via AWX Survey
+    slack_webhook: "{{ slack_webhook }}"  # Injected from AWX credential
+
+  tasks:
+
+    - name: Ensure at least one VPN was selected
+      assert:
+        that:
+          - vpn_list | length > 0
+        fail_msg: "You must select at least one VPN in the survey."
+        success_msg: "Selected VPNs: {{ vpn_list }}"
+
+    - name: Retrieve all VPN peers from UniFi Controller
+      uri:
+        url: "{{ unifi_url }}/proxy/network/integration/v1/sites/{{ unifi_site }}/vpn/peers"
+        method: GET
+        headers:
+          X-API-KEY: "{{ unifi_api_key }}"
+          Accept: "application/json"
+        validate_certs: no
+        return_content: yes
+      register: peers_response
+
+    - name: Display detected VPN peers
+      debug:
+        msg: "Detected VPN peers: {{ peers_response.json.data | map(attribute='name') | list }}"
+
+    - name: Pause selected VPN peers
+      uri:
+        url: "{{ unifi_url }}/proxy/network/integration/v1/sites/{{ unifi_site }}/vpn/peers/{{ item.id }}"
+        method: PATCH
+        headers:
+          X-API-KEY: "{{ unifi_api_key }}"
+          Content-Type: "application/json"
+        body_format: json
+        body:
+          enabled: false
+        validate_certs: no
+      loop: "{{ peers_response.json.data | selectattr('name', 'in', vpn_list) | list }}"
+      loop_control:
+        label: "{{ item.name }}"
+      register: paused_peers
+
+    - name: Wait 60 seconds before resuming VPNs
+      pause:
+        seconds: 60
+
+    - name: Resume selected VPN peers
+      uri:
+        url: "{{ unifi_url }}/proxy/network/integration/v1/sites/{{ unifi_site }}/vpn/peers/{{ item.id }}"
+        method: PATCH
+        headers:
+          X-API-KEY: "{{ unifi_api_key }}"
+          Content-Type: "application/json"
+        body_format: json
+        body:
+          enabled: true
+        validate_certs: no
+      loop: "{{ peers_response.json.data | selectattr('name', 'in', vpn_list) | list }}"
+      loop_control:
+        label: "{{ item.name }}"
+      register: resumed_peers
+
+    - name: Show summary of restarted VPNs
+      debug:
+        msg: |
+          ✅ The following VPNs were restarted successfully:
+          {{ resumed_peers.results | map(attribute='item.name') | list }}
+
+    - name: Build Slack message
+      set_fact:
+        slack_message: |
+          *VPN Restart Summary*
+          🕓 Executed from: `{{ unifi_url }}`
+          📡 Site: `{{ unifi_site }}`
+          {% if resumed_peers.results | length > 0 %}
+          ✅ *Restarted VPNs:*
+          {{ resumed_peers.results | map(attribute='item.name') | join(', ') }}
+          {% else %}
+          ⚠️ No VPNs were restarted.
+          {% endif %}
+          ---
+          *Run completed successfully from AWX.*
+
+    - name: Send Slack notification
+      uri:
+        url: "{{ slack_webhook }}"
+        method: POST
+        headers:
+          Content-Type: "application/json"
+        body_format: json
+        body:
+          text: "{{ slack_message }}"
+        validate_certs: no
+      register: slack_response
+
+    - name: Display Slack response
+      debug:
+        var: slack_response.status
