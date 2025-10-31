@@ -1,11 +1,11 @@
 ---
-- name: Restart selected VPN on Miami UDM (via SSH)
+- name: Restart selected VPN on Miami UDM (via SSH + API)
   hosts: localhost
   gather_facts: no
 
   vars:
     udm_ip: 10.255.255.1
-    slack_webhook_url: "{{ SLACK_WEBHOOK_URL }}"
+
     vpn_map:
       VXCALUDM: 67cee99c8580e74ffc44c64f
       VXDLLUDM: 67a26bfa8580e74ffc0ffded
@@ -13,17 +13,20 @@
       PHILLY-GU: 67a26b268580e74ffc0ffc40
       VTX_SPAIN: 68891f59ccb180797a4bb5e6
 
+    slack_webhook_url: "{{ SLACK_WEBHOOK_URL }}"
+    unifi_api_key: "{{ UNIFI_API_KEY }}"
+
   tasks:
 
-    - name: Validate selected VPN
+    - name: Validate survey selection
       assert:
         that:
           - survey_vpn is defined
           - vpn_map[survey_vpn] is defined
         success_msg: "✅ Selected VPN: {{ survey_vpn }}"
-        fail_msg: "❌ Invalid or undefined VPN selected."
+        fail_msg: "❌ Invalid VPN selected."
 
-    - name: Send start notification to Slack
+    - name: Announce start in Slack
       ansible.builtin.uri:
         url: "{{ slack_webhook_url }}"
         method: POST
@@ -31,34 +34,38 @@
           Content-Type: "application/json"
         body_format: json
         body:
-          text: "🔄 Starting VPN restart for *{{ survey_vpn }}* on *VXMIAUDMSE*..."
+          text: "🔄 Restarting VPN *{{ survey_vpn }}* on *VXMIAUDMSE ({{ udm_ip }})*..."
       ignore_errors: true
 
-    - name: Disable selected VPN via SSH (set enabled=false)
+    - name: Disable VPN tunnel via SSH (API PUT enabled=false)
       ansible.builtin.shell: >
         curl -sk -X PUT
         -H 'Content-Type: application/json'
-        -H 'X-API-KEY: {{ UNIFI_API_KEY }}'
+        -H 'X-API-KEY: {{ unifi_api_key }}'
         -d '{"enabled": false}'
         https://127.0.0.1/proxy/network/api/s/default/rest/networkconf/{{ vpn_map[survey_vpn] }}
       delegate_to: "{{ udm_ip }}"
       remote_user: root
+      register: disable_vpn
+      failed_when: disable_vpn.rc != 0
 
-    - name: Wait 30 seconds before enabling
+    - name: Wait before re-enabling VPN
       ansible.builtin.pause:
         seconds: 30
 
-    - name: Enable selected VPN via SSH (set enabled=true)
+    - name: Enable VPN tunnel via SSH (API PUT enabled=true)
       ansible.builtin.shell: >
         curl -sk -X PUT
         -H 'Content-Type: application/json'
-        -H 'X-API-KEY: {{ UNIFI_API_KEY }}'
+        -H 'X-API-KEY: {{ unifi_api_key }}'
         -d '{"enabled": true}'
         https://127.0.0.1/proxy/network/api/s/default/rest/networkconf/{{ vpn_map[survey_vpn] }}
       delegate_to: "{{ udm_ip }}"
       remote_user: root
+      register: enable_vpn
+      failed_when: enable_vpn.rc != 0
 
-    - name: Send completion notification to Slack
+    - name: Send completion message to Slack
       ansible.builtin.uri:
         url: "{{ slack_webhook_url }}"
         method: POST
@@ -66,11 +73,11 @@
           Content-Type: "application/json"
         body_format: json
         body:
-          text: "✅ VPN *{{ survey_vpn }}* on *VXMIAUDMSE* has been restarted successfully after 30 seconds."
+          text: "✅ VPN *{{ survey_vpn }}* restarted successfully on *VXMIAUDMSE* after 30 seconds."
       register: slack_result
       ignore_errors: true
 
-    - name: Show Slack response
+    - name: Debug Slack response
+      when: slack_result is defined
       debug:
         var: slack_result
-      when: slack_result is defined
