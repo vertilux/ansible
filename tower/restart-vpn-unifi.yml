@@ -3,19 +3,16 @@
   hosts: localhost
   connection: local
   gather_facts: false
-  become: false
 
   vars:
     # Fixed gateway (Miami)
     unifi_gateway_ip: "10.255.255.1"
 
-    # Survey variable (single select)
+    # Survey variable
     selected_vpn: ""
 
-    # Credentials
+    # Slack webhook from credential
     slack_webhook_url: "{{ SLACK_WEBHOOK_URL }}"
-    ssh_user: "root"
-    ssh_password: "{{ UNIFI_SSH_PASSWORD }}"
 
   tasks:
 
@@ -44,10 +41,7 @@
     - name: Pause selected VPN via SSH
       ansible.builtin.shell: |
         ipsec down {{ selected_vpn }}
-      vars:
-        ansible_ssh_user: "{{ ssh_user }}"
-        ansible_ssh_pass: "{{ ssh_password }}"
-        ansible_host: "{{ unifi_gateway_ip }}"
+      delegate_to: "{{ unifi_gateway_ip }}"
       register: pause_result
       ignore_errors: true
 
@@ -58,10 +52,7 @@
     - name: Resume selected VPN via SSH
       ansible.builtin.shell: |
         ipsec up {{ selected_vpn }}
-      vars:
-        ansible_ssh_user: "{{ ssh_user }}"
-        ansible_ssh_pass: "{{ ssh_password }}"
-        ansible_host: "{{ unifi_gateway_ip }}"
+      delegate_to: "{{ unifi_gateway_ip }}"
       register: resume_result
       ignore_errors: true
 
