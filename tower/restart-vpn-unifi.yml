@@ -1,24 +1,33 @@
 ---
-- name: Restart chosen VPN tunnels on selected UniFi gateway
+- name: Restart selected VPN on Miami UDM (via SSH)
   hosts: localhost
   connection: local
   gather_facts: false
   become: false
 
   vars:
-    # Survey variables
-    unifi_gateway_ip: "10.255.255.1"       # Can be overridden by survey
-    site: "default"
-    selected_vpns: ["VXCALUDM"]            # Example value, replaced by survey
+    # Fixed gateway (Miami)
+    unifi_gateway_ip: "10.255.255.1"
 
-    # Credential-injected variables
-    unifi_api_key: "{{ UNIFI_API_KEY }}"
+    # Survey variable (single select)
+    selected_vpn: ""
+
+    # Credentials
     slack_webhook_url: "{{ SLACK_WEBHOOK_URL }}"
+    ssh_user: "root"
+    ssh_password: "{{ UNIFI_SSH_PASSWORD }}"
 
   tasks:
 
+    - name: Validate selected VPN
+      assert:
+        that:
+          - selected_vpn | length > 0
+        fail_msg: "❌ No VPN selected. Please choose one from the survey."
+        success_msg: "✅ Selected VPN: {{ selected_vpn }}"
+
     - name: Send start notification to Slack
-      ansible.builtin.uri:
+      uri:
         url: "{{ slack_webhook_url }}"
         method: POST
         headers:
@@ -27,64 +36,50 @@
         body:
           text: |
             :gear: *Starting VPN restart sequence*
-            Gateway: `{{ unifi_gateway_ip }}`
-            VPN(s): `{{ selected_vpns | join(', ') }}`
+            Gateway: `VXMIAUDMSE ({{ unifi_gateway_ip }})`
+            VPN: `{{ selected_vpn }}`
       when: slack_webhook_url is defined
       ignore_errors: true
 
-    - name: Attempt to pause VPN(s) via UniFi Integration API
-      ansible.builtin.uri:
-        url: "https://{{ unifi_gateway_ip }}/proxy/network/integration/v1/sites/{{ site }}/vpn/restart"
-        method: POST
-        headers:
-          X-API-KEY: "{{ unifi_api_key }}"
-          Accept: "application/json"
-          Content-Type: "application/json"
-        body_format: json
-        body:
-          vpn_names: "{{ selected_vpns }}"
-          action: "pause"
-        validate_certs: false
+    - name: Pause selected VPN via SSH
+      ansible.builtin.shell: |
+        ipsec down {{ selected_vpn }}
+      vars:
+        ansible_ssh_user: "{{ ssh_user }}"
+        ansible_ssh_pass: "{{ ssh_password }}"
+        ansible_host: "{{ unifi_gateway_ip }}"
       register: pause_result
-      failed_when: pause_result.status not in [200, 202]
       ignore_errors: true
 
-    - name: Wait before re-enabling VPN(s)
+    - name: Wait before resuming
       pause:
-        seconds: 60
+        seconds: 15
 
-    - name: Resume VPN(s) via UniFi Integration API
-      ansible.builtin.uri:
-        url: "https://{{ unifi_gateway_ip }}/proxy/network/integration/v1/sites/{{ site }}/vpn/restart"
-        method: POST
-        headers:
-          X-API-KEY: "{{ unifi_api_key }}"
-          Accept: "application/json"
-          Content-Type: "application/json"
-        body_format: json
-        body:
-          vpn_names: "{{ selected_vpns }}"
-          action: "resume"
-        validate_certs: false
+    - name: Resume selected VPN via SSH
+      ansible.builtin.shell: |
+        ipsec up {{ selected_vpn }}
+      vars:
+        ansible_ssh_user: "{{ ssh_user }}"
+        ansible_ssh_pass: "{{ ssh_password }}"
+        ansible_host: "{{ unifi_gateway_ip }}"
       register: resume_result
-      failed_when: resume_result.status not in [200, 202]
       ignore_errors: true
 
     - name: Build Slack message
       set_fact:
         slack_message: >
-          {% if (resume_result.status | default(0)) in [200, 202] %}
+          {% if (resume_result.rc | default(1)) == 0 %}
           ✅ *VPN restart completed successfully*
-              Gateway: `{{ unifi_gateway_ip }}`
-              VPN(s): `{{ selected_vpns | join(', ') }}`
+              Gateway: `VXMIAUDMSE ({{ unifi_gateway_ip }})`
+              VPN: `{{ selected_vpn }}`
           {% else %}
-          ⚠️ *VPN restart failed!*
-              Gateway: `{{ unifi_gateway_ip }}`
-              VPN(s): `{{ selected_vpns | join(', ') }}`
+          ⚠️ *VPN restart failed or partially completed*
+              Gateway: `VXMIAUDMSE ({{ unifi_gateway_ip }})`
+              VPN: `{{ selected_vpn }}`
           {% endif %}
 
-    - name: Send Slack summary notification
-      ansible.builtin.uri:
+    - name: Send completion message to Slack
+      uri:
         url: "{{ slack_webhook_url }}"
         method: POST
         headers:
@@ -93,10 +88,4 @@
         body:
           text: "{{ slack_message }}"
       when: slack_webhook_url is defined
-      register: slack_response
       ignore_errors: true
-
-    - name: Debug Slack response
-      debug:
-        var: slack_response
-      when: slack_response is defined
