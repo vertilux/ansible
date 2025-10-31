@@ -1,107 +1,126 @@
 ---
-- name: Restart selected VPN connections from UniFi Controller
+- name: Restart chosen VPN tunnels on selected UniFi gateway
   hosts: localhost
-  gather_facts: no
+  gather_facts: false
 
   vars:
-    unifi_url: "https://10.255.255.1"     # Main UDM SE in Miami
-    unifi_site: "default"                 # Site name (from API)
-    vpn_list: []                          # Filled via AWX Survey
-    slack_webhook: "{{ slack_webhook }}"  # Injected from AWX credential
+    # Map UDM name (from Survey) -> management IP (SSH)
+    # ✅ MIAMI ya está completo. Completa los demás cuando quieras.
+    udm_targets:
+      VXMIAUDMSE: { host: "10.255.255.1", label: "Miami (UDM SE)" }
+      VXCALUDM:   { host: "", label: "California (UDM Pro)" }
+      VXCOLUDM:   { host: "", label: "Colombia (UDM Pro)" }
+      VXDLLUDM:   { host: "", label: "Dallas (UDM Pro)" }
+      VXPANUDM:   { host: "", label: "Panama (UDM Pro)" }
+      VTX_SPAIN:  { host: "", label: "Spain (UDM Pro)" }
+      PHILLY-GU:  { host: "", label: "Philly (UCG Ultra)" }
+
+    # Slack (provided by AWX Credential -> variable 'slack_webhook_url')
+    slack_channel: "#network-ops"
+    slack_username: "AWX Automation Bot"
+
+    # Seconds to keep tunnels paused before enabling
+    hold_seconds: 60
+
+  # ---- Survey variables (prompted in Template) ----
+  # target_udm: name key from udm_targets (single choice)
+  # vpn_names: list of VPN tunnel names to toggle (multi-select)
+  vars_prompt: []
 
   tasks:
-
-    - name: Ensure at least one VPN was selected
+    - name: Sanity | Ensure survey provided a known UDM
       assert:
         that:
-          - vpn_list | length > 0
-        fail_msg: "You must select at least one VPN in the survey."
-        success_msg: "Selected VPNs: {{ vpn_list }}"
+          - target_udm is defined
+          - target_udm in udm_targets
+        fail_msg: "Survey must provide a valid 'target_udm' (one of {{ udm_targets.keys() | list }})"
 
-    - name: Retrieve all VPN peers from UniFi Controller
-      uri:
-        url: "{{ unifi_url }}/proxy/network/integration/v1/sites/{{ unifi_site }}/vpn/peers"
-        method: GET
-        headers:
-          X-API-KEY: "{{ unifi_api_key }}"
-          Accept: "application/json"
-        validate_certs: no
-        return_content: yes
-      register: peers_response
+    - name: Sanity | Ensure that UDM has a management IP set
+      assert:
+        that:
+          - (udm_targets[target_udm].host | default('')) | length > 0
+        fail_msg: "Management IP for {{ target_udm }} is not set. Edit playbook vars.udm_targets and fill the 'host'."
 
-    - name: Display detected VPN peers
-      debug:
-        msg: "Detected VPN peers: {{ peers_response.json.data | map(attribute='name') | list }}"
+    - name: Sanity | Ensure at least one VPN name was selected
+      assert:
+        that:
+          - vpn_names is defined
+          - vpn_names | length > 0
+        fail_msg: "Survey must provide at least one VPN tunnel in 'vpn_names'."
 
-    - name: Pause selected VPN peers
-      uri:
-        url: "{{ unifi_url }}/proxy/network/integration/v1/sites/{{ unifi_site }}/vpn/peers/{{ item.id }}"
-        method: PATCH
-        headers:
-          X-API-KEY: "{{ unifi_api_key }}"
-          Content-Type: "application/json"
-        body_format: json
-        body:
-          enabled: false
-        validate_certs: no
-      loop: "{{ peers_response.json.data | selectattr('name', 'in', vpn_list) | list }}"
-      loop_control:
-        label: "{{ item.name }}"
-      register: paused_peers
-
-    - name: Wait 60 seconds before resuming VPNs
-      pause:
-        seconds: 60
-
-    - name: Resume selected VPN peers
-      uri:
-        url: "{{ unifi_url }}/proxy/network/integration/v1/sites/{{ unifi_site }}/vpn/peers/{{ item.id }}"
-        method: PATCH
-        headers:
-          X-API-KEY: "{{ unifi_api_key }}"
-          Content-Type: "application/json"
-        body_format: json
-        body:
-          enabled: true
-        validate_certs: no
-      loop: "{{ peers_response.json.data | selectattr('name', 'in', vpn_list) | list }}"
-      loop_control:
-        label: "{{ item.name }}"
-      register: resumed_peers
-
-    - name: Show summary of restarted VPNs
-      debug:
-        msg: |
-          ✅ The following VPNs were restarted successfully:
-          {{ resumed_peers.results | map(attribute='item.name') | list }}
-
-    - name: Build Slack message
+    - name: Set convenience facts
       set_fact:
-        slack_message: |
-          *VPN Restart Summary*
-          🕓 Executed from: `{{ unifi_url }}`
-          📡 Site: `{{ unifi_site }}`
-          {% if resumed_peers.results | length > 0 %}
-          ✅ *Restarted VPNs:*
-          {{ resumed_peers.results | map(attribute='item.name') | join(', ') }}
-          {% else %}
-          ⚠️ No VPNs were restarted.
-          {% endif %}
-          ---
-          *Run completed successfully from AWX.*
+        udm_host: "{{ udm_targets[target_udm].host }}"
+        udm_label: "{{ udm_targets[target_udm].label }}"
 
-    - name: Send Slack notification
+    - name: Slack | Notify start
       uri:
-        url: "{{ slack_webhook }}"
+        url: "{{ slack_webhook_url }}"
         method: POST
-        headers:
-          Content-Type: "application/json"
+        headers: { Content-Type: "application/json" }
         body_format: json
         body:
-          text: "{{ slack_message }}"
-        validate_certs: no
-      register: slack_response
+          username: "{{ slack_username }}"
+          channel: "{{ slack_channel }}"
+          text: |
+            :gear: Starting VPN restart on *{{ target_udm }}* ({{ udm_label }}).
+            Tunnels selected: {{ vpn_names | join(', ') }}
+      delegate_to: localhost
+      ignore_errors: true
 
-    - name: Display Slack response
-      debug:
-        var: slack_response.status
+    # ---- Pause phase: disable all selected tunnels ----
+    - name: UDM | Pause VPN tunnel
+      ansible.builtin.shell: >
+        ubntcli vpn ipsec link disable name {{ item }}
+      loop: "{{ vpn_names }}"
+      loop_control:
+        label: "{{ item }}"
+      register: pause_cmd
+      changed_when: true
+      delegate_to: "{{ udm_host }}"
+      become: false
+
+    - name: Check pause results
+      assert:
+        that:
+          - (pause_cmd.results | selectattr('rc','equalto',0) | list | length) == (vpn_names | length)
+        fail_msg: "One or more tunnels failed to pause. Review 'pause_cmd' in job output."
+      failed_when: false
+
+    - name: Hold | Wait before re-enabling
+      pause:
+        seconds: "{{ hold_seconds }}"
+
+    # ---- Resume phase: enable all selected tunnels ----
+    - name: UDM | Resume VPN tunnel
+      ansible.builtin.shell: >
+        ubntcli vpn ipsec link enable name {{ item }}
+      loop: "{{ vpn_names }}"
+      loop_control:
+        label: "{{ item }}"
+      register: resume_cmd
+      changed_when: true
+      delegate_to: "{{ udm_host }}"
+      become: false
+
+    - name: Compute overall result
+      set_fact:
+        resume_failed: "{{ (resume_cmd.results | selectattr('rc','ne',0) | list | length) > 0 }}"
+
+    - name: Slack | Final status
+      uri:
+        url: "{{ slack_webhook_url }}"
+        method: POST
+        headers: { Content-Type: "application/json" }
+        body_format: json
+        body:
+          username: "{{ slack_username }}"
+          channel: "{{ slack_channel }}"
+          text: >-
+            {% if not resume_failed -%}
+            ✅ VPN restart completed on *{{ target_udm }}* ({{ udm_label }}). Tunnels: {{ vpn_names | join(', ') }}
+            {%- else -%}
+            ⚠️ VPN restart had errors on *{{ target_udm }}*. Please check AWX job logs. Tunnels: {{ vpn_names | join(', ') }}
+            {%- endif %}
+      delegate_to: localhost
+      ignore_errors: true
