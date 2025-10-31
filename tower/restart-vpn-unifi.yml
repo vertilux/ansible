@@ -3,30 +3,37 @@
   hosts: localhost
   connection: local
   gather_facts: false
+  become: false
 
   vars:
-    # These variables will come from your AWX Survey
-    unifi_gateway_ip: "10.255.255.1"
-    unifi_api_key: "{{ lookup('env', 'UNIFI_API_KEY') }}"   # Can also come from AWX credential
-    selected_vpns: "{{ vpn_list | default(['VXCALUDM']) }}"
-    slack_webhook: "{{ lookup('env', 'SLACK_WEBHOOK') }}"
+    # Survey variables
+    unifi_gateway_ip: "10.255.255.1"       # Can be overridden by survey
     site: "default"
+    selected_vpns: ["VXCALUDM"]            # Example value, replaced by survey
+
+    # Credential-injected variables
+    unifi_api_key: "{{ UNIFI_API_KEY }}"
+    slack_webhook_url: "{{ SLACK_WEBHOOK_URL }}"
 
   tasks:
 
-    - name: Announce start on Slack
-      uri:
-        url: "{{ slack_webhook }}"
+    - name: Send start notification to Slack
+      ansible.builtin.uri:
+        url: "{{ slack_webhook_url }}"
         method: POST
         headers:
           Content-Type: "application/json"
         body_format: json
         body:
-          text: ":gear: Starting VPN restart sequence on *{{ site }}* → `{{ selected_vpns | join(', ') }}`"
-      delegate_to: localhost
+          text: |
+            :gear: *Starting VPN restart sequence*
+            Gateway: `{{ unifi_gateway_ip }}`
+            VPN(s): `{{ selected_vpns | join(', ') }}`
+      when: slack_webhook_url is defined
+      ignore_errors: true
 
-    - name: Pause each VPN tunnel (disable IPsec link)
-      uri:
+    - name: Attempt to pause VPN(s) via UniFi Integration API
+      ansible.builtin.uri:
         url: "https://{{ unifi_gateway_ip }}/proxy/network/integration/v1/sites/{{ site }}/vpn/restart"
         method: POST
         headers:
@@ -40,13 +47,14 @@
         validate_certs: false
       register: pause_result
       failed_when: pause_result.status not in [200, 202]
+      ignore_errors: true
 
-    - name: Wait before resume
+    - name: Wait before re-enabling VPN(s)
       pause:
         seconds: 60
 
-    - name: Resume each VPN tunnel (enable IPsec link)
-      uri:
+    - name: Resume VPN(s) via UniFi Integration API
+      ansible.builtin.uri:
         url: "https://{{ unifi_gateway_ip }}/proxy/network/integration/v1/sites/{{ site }}/vpn/restart"
         method: POST
         headers:
@@ -60,27 +68,35 @@
         validate_certs: false
       register: resume_result
       failed_when: resume_result.status not in [200, 202]
+      ignore_errors: true
 
-    - name: Notify completion on Slack
-      uri:
-        url: "{{ slack_webhook }}"
+    - name: Build Slack message
+      set_fact:
+        slack_message: >
+          {% if (resume_result.status | default(0)) in [200, 202] %}
+          ✅ *VPN restart completed successfully*
+              Gateway: `{{ unifi_gateway_ip }}`
+              VPN(s): `{{ selected_vpns | join(', ') }}`
+          {% else %}
+          ⚠️ *VPN restart failed!*
+              Gateway: `{{ unifi_gateway_ip }}`
+              VPN(s): `{{ selected_vpns | join(', ') }}`
+          {% endif %}
+
+    - name: Send Slack summary notification
+      ansible.builtin.uri:
+        url: "{{ slack_webhook_url }}"
         method: POST
         headers:
           Content-Type: "application/json"
         body_format: json
         body:
-          text: ":white_check_mark: VPN restart completed successfully for `{{ selected_vpns | join(', ') }}` on *{{ site }}*."
-      when: resume_result.status in [200, 202]
-      delegate_to: localhost
+          text: "{{ slack_message }}"
+      when: slack_webhook_url is defined
+      register: slack_response
+      ignore_errors: true
 
-    - name: Notify failure on Slack (if any)
-      uri:
-        url: "{{ slack_webhook }}"
-        method: POST
-        headers:
-          Content-Type: "application/json"
-        body_format: json
-        body:
-          text: ":warning: VPN restart failed for one or more tunnels: `{{ selected_vpns | join(', ') }}`. Please check UniFi logs."
-      when: resume_result.status not in [200, 202]
-      delegate_to: localhost
+    - name: Debug Slack response
+      debug:
+        var: slack_response
+      when: slack_response is defined
