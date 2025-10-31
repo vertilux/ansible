@@ -25,7 +25,7 @@
 
 - name: Notify Slack for {{ vpn_name }}
   ansible.builtin.uri:
-    url: "{{ slack_webhook_url }}"
+    url: "{{ SLACK_WEBHOOK_URL }}"
     method: POST
     headers:
       Content-Type: "application/json"
