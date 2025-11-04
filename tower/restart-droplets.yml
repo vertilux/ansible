@@ -33,61 +33,12 @@
       ignore_errors: true
 
   tasks:
-    - name: Sequentially reboot each selected droplet
+    - name: Process each selected droplet in order
+      ansible.builtin.include_tasks: restart-single-droplet.yml
       loop: "{{ selected_droplets }}"
       loop_control:
         loop_var: droplet_name
         index_var: droplet_index
-      block:
-        - name: Resolve droplet IP from inventory
-          set_fact:
-            droplet_ip: "{{ hostvars[droplet_name].ansible_host | default('unknown') }}"
-          when: hostvars[droplet_name] is defined
-
-        - name: Announce reboot start for droplet
-          ansible.builtin.uri:
-            url: "{{ slack_webhook_url }}"
-            method: POST
-            headers:
-              Content-Type: "application/json"
-            body_format: json
-            body:
-              text: >-
-                🔄 *Step {{ droplet_index + 1 }}/{{ selected_droplets | length }}:* Rebooting *{{ droplet_name }}*
-                ({{ droplet_ip }})...
-          when: slack_webhook_url is defined
-          ignore_errors: true
-
-        - name: Reboot droplet remotely via SSH
-          ansible.builtin.shell: |
-            ssh -o StrictHostKeyChecking=no deploy@{{ droplet_ip }} 'sudo reboot'
-          register: reboot_result
-          ignore_errors: true
-
-        - name: Pause 30 seconds before next
-          ansible.builtin.pause:
-            seconds: 30
-
-        - name: Record success or failure
-          set_fact:
-            restarted_ok: "{{ restarted_ok + [droplet_name] if reboot_result.rc == 0 else restarted_ok }}"
-            restarted_fail: "{{ restarted_fail + [droplet_name] if reboot_result.rc != 0 else restarted_fail }}"
-
-        - name: Notify per-droplet result on Slack
-          ansible.builtin.uri:
-            url: "{{ slack_webhook_url }}"
-            method: POST
-            headers:
-              Content-Type: "application/json"
-            body_format: json
-            body: >-
-              {% if reboot_result.rc == 0 %}
-              ✅ *{{ droplet_name }}* rebooted successfully ({{ droplet_ip }}).
-              {% else %}
-              ❌ Failed to reboot *{{ droplet_name }}* ({{ droplet_ip }}).
-              {% endif %}
-          when: slack_webhook_url is defined
-          ignore_errors: true
 
   post_tasks:
     - name: Calculate total duration
