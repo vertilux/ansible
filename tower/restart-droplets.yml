@@ -6,6 +6,7 @@
   vars:
     selected_droplets: "{{ droplet_names | default([]) }}"
     slack_webhook_url: "{{ SLACK_WEBHOOK_URL | default('') }}"
+    start_time: "{{ lookup('pipe', 'date +%s') }}"
 
   tasks:
     - name: Validate survey input
@@ -33,7 +34,7 @@
         groups: reboot_batch
       loop: "{{ droplet_ips | dict2items }}"
 
-    - name: Send global start message to Slack
+    - name: Notify global start on Slack
       when: slack_webhook_url | length > 0
       uri:
         url: "{{ slack_webhook_url }}"
@@ -47,7 +48,7 @@
       ignore_errors: true
 
 
-# Segundo play — reinicios reales
+# Segundo play: reinicio secuencial con resumen
 - name: Sequentially reboot selected droplets
   hosts: reboot_batch
   gather_facts: false
@@ -71,12 +72,12 @@
         - name: Try normal Ansible reboot first
           become: true
           reboot:
-            reboot_timeout: 180
+            reboot_timeout: 120
             test_command: "uptime"
           register: reboot_result
           ignore_errors: true
 
-        - name: Force fallback reboot if needed (handles low disk)
+        - name: Fallback reboot (for low disk or hung systems)
           when: reboot_result is failed
           shell: "nohup /usr/bin/sudo /sbin/shutdown -r now >/dev/null 2>&1 &"
           async: 1
@@ -84,20 +85,16 @@
           register: forced_reboot
           ignore_errors: true
 
-        - name: Wait 15 seconds before checking
+        - name: Wait 2 seconds before checking
           pause:
-            seconds: 15
+            seconds: 2
 
         - name: Wait for droplet to come back online
           wait_for_connection:
-            delay: 10
-            timeout: 120
+            delay: 2
+            timeout: 90
           register: back_up
           ignore_errors: true
-
-      rescue:
-        - debug:
-            msg: "⚠️ Rescue: {{ inventory_hostname }} encountered reboot failure."
 
       always:
         - name: Determine reboot success
@@ -106,7 +103,11 @@
               {{ (reboot_result is defined and reboot_result is succeeded)
               or (back_up is defined and back_up is succeeded) }}
 
-        - name: Notify Slack of reboot result
+        - name: Record droplet result
+          set_fact:
+            reboot_results_all: "{{ reboot_results_all | default({}) | combine({inventory_hostname: reboot_success}) }}"
+
+        - name: Notify Slack of result
           when: slack_webhook_url | length > 0
           uri:
             url: "{{ slack_webhook_url }}"
@@ -117,11 +118,49 @@
               {% if reboot_success %}
               {"text":"✅ *{{ inventory_hostname }}* rebooted successfully."}
               {% else %}
-              {"text":"❌ *{{ inventory_hostname }}* reboot failed or did not respond in time."}
+              {"text":"⚠️ *{{ inventory_hostname }}* reboot failed or unresponsive."}
               {% endif %}
           changed_when: false
           ignore_errors: true
 
-        - name: Wait 15 seconds before next droplet
+        - name: Pause before next droplet
           pause:
-            seconds: 15
+            seconds: 2
+
+
+# Tercer play: resumen general en Slack
+- name: Summarize reboot results
+  hosts: localhost
+  gather_facts: no
+  vars:
+    slack_webhook_url: "{{ SLACK_WEBHOOK_URL | default('') }}"
+    end_time: "{{ lookup('pipe', 'date +%s') }}"
+  tasks:
+    - name: Compute total time
+      set_fact:
+        elapsed_seconds: "{{ end_time | int - start_time | int }}"
+        elapsed_minutes: "{{ (end_time | int - start_time | int) // 60 }}"
+
+    - name: Build Slack summary
+      set_fact:
+        summary_msg: |
+          {% set total = reboot_results_all | length %}
+          {% set ok = reboot_results_all | dict2items | selectattr('value','equalto',true) | list | length %}
+          {% set failed = total - ok %}
+          ✅ *{{ ok }}/{{ total }}* droplets rebooted successfully.
+          {% if failed > 0 %}
+          ❌ *{{ failed }}* failed: {{ reboot_results_all | dict2items | selectattr('value','equalto',false) | map(attribute='key') | join(', ') }}
+          {% endif %}
+          ⏱️ Total time: {{ elapsed_seconds }} sec
+
+    - name: Send summary to Slack
+      when: slack_webhook_url | length > 0
+      uri:
+        url: "{{ slack_webhook_url }}"
+        method: POST
+        headers: { Content-Type: "application/json" }
+        body_format: json
+        body:
+          text: "{{ summary_msg }}"
+      changed_when: false
+      ignore_errors: true
