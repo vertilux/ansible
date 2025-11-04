@@ -40,55 +40,56 @@
       ansible.builtin.meta: end_host
       when: inventory_hostname not in selected_droplets
 
-    - name: Announce reboot start on Slack
-      ansible.builtin.uri:
-        url: "{{ slack_webhook_url }}"
-        method: POST
-        headers:
-          Content-Type: "application/json"
-        body_format: json
-        body:
-          text: "🔄 Rebooting *{{ inventory_hostname }}* ({{ ansible_host }})..."
-      delegate_to: localhost
-      when: slack_webhook_url is defined
-      ignore_errors: true
+    - block:
+        - name: Announce reboot start on Slack
+          ansible.builtin.uri:
+            url: "{{ slack_webhook_url }}"
+            method: POST
+            headers:
+              Content-Type: "application/json"
+            body_format: json
+            body:
+              text: "🔄 Rebooting *{{ inventory_hostname }}* ({{ ansible_host }})..."
+          delegate_to: localhost
+          when: slack_webhook_url is defined
+          ignore_errors: true
 
-    - name: Reboot droplet
-      become: true
-      ansible.builtin.reboot:
-        post_reboot_delay: 10
-        reboot_timeout: 900
-        test_command: "whoami"
+        - name: Reboot droplet
+          become: true
+          ansible.builtin.reboot:
+            post_reboot_delay: 10
+            reboot_timeout: 900
+            test_command: "whoami"
 
-    - name: Register success
-      ansible.builtin.set_fact:
-        restarted_ok: "{{ restarted_ok + [inventory_hostname] }}"
-      delegate_to: localhost
+        - name: Register success
+          ansible.builtin.set_fact:
+            restarted_ok: "{{ restarted_ok + [inventory_hostname] }}"
+          delegate_to: localhost
 
-    - name: Pause 30 seconds before next droplet
-      ansible.builtin.pause:
-        seconds: 30
+        - name: Pause 30 seconds before next droplet
+          ansible.builtin.pause:
+            seconds: 30
 
-  rescue:
-    - name: Register failure
-      ansible.builtin.set_fact:
-        restarted_fail: "{{ restarted_fail + [inventory_hostname] }}"
-      delegate_to: localhost
+      rescue:
+        - name: Register failure
+          ansible.builtin.set_fact:
+            restarted_fail: "{{ restarted_fail + [inventory_hostname] }}"
+          delegate_to: localhost
 
-    - name: Notify failure on Slack
-      ansible.builtin.uri:
-        url: "{{ slack_webhook_url }}"
-        method: POST
-        headers:
-          Content-Type: "application/json"
-        body_format: json
-        body:
-          text: "❗ Reboot failed for *{{ inventory_hostname }}* ({{ ansible_host }})"
-      delegate_to: localhost
-      when: slack_webhook_url is defined
-      ignore_errors: true
+        - name: Notify failure on Slack
+          ansible.builtin.uri:
+            url: "{{ slack_webhook_url }}"
+            method: POST
+            headers:
+              Content-Type: "application/json"
+            body_format: json
+            body:
+              text: "❗ Reboot failed for *{{ inventory_hostname }}* ({{ ansible_host }})"
+          delegate_to: localhost
+          when: slack_webhook_url is defined
+          ignore_errors: true
 
-  always:
+  post_tasks:
     - name: Calculate total duration
       ansible.builtin.set_fact:
         total_duration: "{{ (lookup('pipe', 'date +%s') | int - start_time) | int }}"
@@ -106,7 +107,11 @@
         body_format: json
         body:
           text: >-
+            {% if (restarted_fail | length | int) == 0 %}
             ✅ *Reboot Summary*:
+            {% else %}
+            ⚠️ *Reboot Summary (Partial Failures)*:
+            {% endif %}
             - Successful: {{ restarted_ok | unique | join(', ') | default('none') }}
             {% if (restarted_fail | default([])) | length > 0 %}
             - Failed: {{ restarted_fail | unique | join(', ') }}
