@@ -1,65 +1,4 @@
----
-# Play 1: construir lote en memoria desde los nombres elegidos en el Survey
-- name: Build transient group with selected droplets
-  hosts: localhost
-  gather_facts: false
-  vars:
-    # Survey (multi-select de nombres de host del inventario de DigitalOcean)
-    selected_droplets: "{{ droplet_names | default([]) }}"
-    # Slack desde Credential (ENV var SLACK_WEBHOOK_URL) o extra var
-    slack_webhook_url: "{{ SLACK_WEBHOOK_URL | default('') }}"
-
-  tasks:
-    - name: Validate survey input
-      assert:
-        that:
-          - selected_droplets | length > 0
-        fail_msg: "❌ You must select at least one droplet by name."
-        success_msg: "✅ Selected droplets: {{ selected_droplets | join(', ') }}"
-
-    - name: Resolve selected droplets to IPs (from inventory)
-      vars:
-        item_ip: "{{ hostvars[item].ansible_host | default(hostvars[item].inventory_hostname) | default('') }}"
-      set_fact:
-        _resolved: "{{ (_resolved | default({})) | combine({ item: item_ip }) }}"
-      loop: "{{ selected_droplets }}"
-      loop_control:
-        label: "{{ item }}"
-
-    - name: Fail if any droplet lacks IP in inventory
-      assert:
-        that:
-          - _resolved.values() | difference(['']) | length == _resolved | length
-        fail_msg: >
-          ❌ One or more droplets have no ansible_host/IP in inventory:
-          {{ _resolved | dict2items | selectattr('value','equalto','') | map(attribute='key') | list }}
-        success_msg: "✅ All selected droplets have IPs."
-
-    - name: Create transient group 'reboot_batch'
-      add_host:
-        name: "{{ item.key }}"
-        groups: reboot_batch
-        ansible_host: "{{ item.value }}"
-        ansible_user: "deploy"
-      loop: "{{ _resolved | dict2items }}"
-
-    - name: Notify global start on Slack (once)
-      when: slack_webhook_url | length > 0
-      uri:
-        url: "{{ slack_webhook_url }}"
-        method: POST
-        headers: { Content-Type: "application/json" }
-        body_format: json
-        body:
-          text: "⚙️ Starting sequential reboot for: {{ selected_droplets | join(', ') }}"
-      changed_when: false
-      run_once: true
-
-    - name: Mark start time
-      set_fact:
-        _start_ts: "{{ lookup('pipe','date +%s') | int }}"
-
-# Play 2: reiniciar serial=1 con fallback y pausas cortas
+# Play 2: reiniciar serial=1 con manejo de errores sin detener todo
 - name: Sequentially reboot selected droplets
   hosts: reboot_batch
   gather_facts: false
@@ -77,101 +16,69 @@
         body:
           text: "🔄 Rebooting *{{ inventory_hostname }}* ({{ ansible_host }})…"
       changed_when: false
-
-    # Intento principal: reboot module (espera a que vuelva)
-    - name: Reboot via Ansible (preferred)
-      become: true
-      become_method: sudo
-      reboot:
-        reboot_timeout: 180
-        test_command: "uptime"
-      register: reboot_main
       ignore_errors: true
 
-    # Fallback si el sudo no es passwordless o falla el reboot module
-    - name: Fallback reboot using shutdown (async fire-and-forget)
-      when: reboot_main is failed
-      shell: "nohup /usr/bin/sudo /sbin/shutdown -r now >/dev/null 2>&1 &"
-      async: 1
-      poll: 0
-      register: reboot_fallback
-      ignore_errors: true
+    - block:
+        # Intento principal: módulo reboot
+        - name: Attempt controlled reboot
+          become: true
+          become_method: sudo
+          reboot:
+            reboot_timeout: 180
+            test_command: "uptime"
+          register: reboot_main
+          ignore_errors: true
 
-    - name: Wait for host to go down (grace period)
-      when: reboot_main is failed
-      wait_for:
-        host: "{{ ansible_host }}"
-        port: 22
-        state: drained
-        delay: 5
-        timeout: 60
-      ignore_errors: true
+        # Fallback si falla el reboot module
+        - name: Fallback reboot using shutdown (async)
+          when: reboot_main is failed
+          shell: "nohup /usr/bin/sudo /sbin/shutdown -r now >/dev/null 2>&1 &"
+          async: 1
+          poll: 0
+          register: reboot_fallback
+          ignore_errors: true
 
-    - name: Wait for host to come back
-      wait_for_connection:
-        delay: 10
-        timeout: 120
-      register: back_up
-      ignore_errors: true
+        # Espera 15 segundos antes de verificar
+        - name: Wait short grace period before checking return
+          pause:
+            seconds: 15
 
-    - name: Decide success/failure for this droplet
-      set_fact:
-        droplet_ok: >-
-          {{ (reboot_main is succeeded) or (back_up is defined and (back_up is succeeded)) }}
+        # Espera que vuelva
+        - name: Wait for droplet to come back online
+          wait_for_connection:
+            delay: 10
+            timeout: 120
+          register: back_up
+          ignore_errors: true
 
-    - name: Pause 15s before moving to next
-      pause:
-        seconds: 15
+      rescue:
+        - name: Mark reboot as failed
+          set_fact:
+            droplet_ok: false
+      always:
+        - name: Evaluate result even if failed
+          set_fact:
+            droplet_ok: >-
+              {{ (reboot_main is defined and reboot_main is succeeded)
+                 or (back_up is defined and back_up is succeeded)
+                 or false }}
 
-    - name: Per-droplet result to Slack
-      when: slack_webhook_url | length > 0
-      uri:
-        url: "{{ slack_webhook_url }}"
-        method: POST
-        headers: { Content-Type: "application/json" }
-        body_format: json
-        body: >-
-          {% if droplet_ok %}
-          {"text":"✅ *{{ inventory_hostname }}* rebooted successfully ({{ ansible_host }})."}
-          {% else %}
-          {"text":"❌ *{{ inventory_hostname }}* reboot failed or did not come back in time ({{ ansible_host }})."}
-          {% endif %}
-      changed_when: false
+        - name: Send per-droplet status to Slack
+          when: slack_webhook_url | length > 0
+          uri:
+            url: "{{ slack_webhook_url }}"
+            method: POST
+            headers: { Content-Type: "application/json" }
+            body_format: json
+            body: >-
+              {% if droplet_ok %}
+              {"text":"✅ *{{ inventory_hostname }}* rebooted successfully ({{ ansible_host }})."}
+              {% else %}
+              {"text":"❌ *{{ inventory_hostname }}* reboot failed or could not complete ({{ ansible_host }})."}
+              {% endif %}
+          changed_when: false
+          ignore_errors: true
 
-# Play 3: resumen único
-- name: Send consolidated summary
-  hosts: reboot_batch
-  gather_facts: false
-  vars:
-    slack_webhook_url: "{{ SLACK_WEBHOOK_URL | default('') }}"
-  tasks:
-    - name: Collect results from all hosts
-      set_fact:
-        ok_list: "{{ groups['reboot_batch'] | map('extract', hostvars, 'droplet_ok') | list | zip(groups['reboot_batch']) | selectattr('0') | map('last') | list }}"
-        fail_list: "{{ groups['reboot_batch'] | difference(ok_list) }}"
-      run_once: true
-
-    - name: Compute duration and totals
-      run_once: true
-      set_fact:
-        _end_ts: "{{ lookup('pipe','date +%s') | int }}"
-        _total_sec: "{{ _end_ts - hostvars[groups['reboot_batch'][0]]._start_ts }}"
-        _mins: "{{ (_total_sec // 60) | int }}"
-        _secs: "{{ (_total_sec % 60) | int }}"
-
-    - name: Post summary to Slack (once)
-      when: slack_webhook_url | length > 0
-      uri:
-        url: "{{ slack_webhook_url }}"
-        method: POST
-        headers: { Content-Type: "application/json" }
-        body_format: json
-        body:
-          text: >-
-            🟢 Finished droplet reboots.
-            • Total: {{ groups['reboot_batch'] | length }}
-            • OK: {{ ok_list | length }} → {{ ok_list | join(', ') if ok_list|length>0 else '—' }}
-            • Failed: {{ fail_list | length }} → {{ fail_list | join(', ') if fail_list|length>0 else '—' }}
-            • Duration: {{ _mins }}m {{ _secs }}s
-      run_once: true
-      changed_when: false
+        - name: Pause before next droplet
+          pause:
+            seconds: 15
