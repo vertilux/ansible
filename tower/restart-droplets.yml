@@ -1,26 +1,23 @@
 ---
-- name: Restart selected DigitalOcean droplets (sequential) and notify Slack
-  hosts: digital_ocean     # grupo del inventario (ver sección 3)
+- name: Restart selected DigitalOcean droplets (by name, sequentially)
+  hosts: digital_ocean
   gather_facts: no
-  serial: 1                # uno por uno
-  any_errors_fatal: false
+  serial: 1
 
   vars:
-    # AWX Survey: variable multiple-select con los hostnames/IPs elegidos
     selected_droplets: "{{ survey_droplets | default([]) }}"
-    # Slack webhook viene de la credencial "Slack Webhook" (variable SLACK_WEBHOOK_URL)
     slack_webhook_url: "{{ SLACK_WEBHOOK_URL | default(omit) }}"
-    # Acumuladores globales (se actualizan en localhost)
     restarted_ok: []
     restarted_fail: []
+    start_time: "{{ lookup('pipe', 'date +%s') | int }}"
 
   pre_tasks:
-    - name: Validate survey provided at least one droplet
+    - name: Validate survey input
       ansible.builtin.assert:
         that:
           - selected_droplets | length > 0
-        fail_msg: "❌ You must select at least one droplet in the survey."
-        success_msg: "✅ Selected: {{ selected_droplets | join(', ') }}"
+        fail_msg: "❌ Please select at least one droplet to reboot."
+        success_msg: "✅ Selected droplets: {{ selected_droplets | join(', ') }}"
       run_once: true
       delegate_to: localhost
 
@@ -32,18 +29,18 @@
           Content-Type: "application/json"
         body_format: json
         body:
-          text: "⚙️ Starting sequential reboot for: {{ selected_droplets | join(', ') }}"
+          text: "⚙️ Starting reboot process for: {{ selected_droplets | join(', ') }}"
       run_once: true
       delegate_to: localhost
       when: slack_webhook_url is defined
       ignore_errors: true
 
   tasks:
-    - name: Skip hosts not selected in survey
+    - name: Skip hosts not selected
       ansible.builtin.meta: end_host
       when: inventory_hostname not in selected_droplets
 
-    - name: Announce host start (Slack)
+    - name: Announce reboot start on Slack
       ansible.builtin.uri:
         url: "{{ slack_webhook_url }}"
         method: POST
@@ -51,37 +48,34 @@
           Content-Type: "application/json"
         body_format: json
         body:
-          text: "🔄 Rebooting *{{ inventory_hostname }}*…"
+          text: "🔄 Rebooting *{{ inventory_hostname }}* ({{ ansible_host }})..."
       delegate_to: localhost
       when: slack_webhook_url is defined
       ignore_errors: true
 
-    - name: Reboot droplet (wait until it’s back)
+    - name: Reboot droplet
       become: true
-      become_method: sudo
-      # el usuario SSH lo pones en inventario/credencial (deploy)
       ansible.builtin.reboot:
-        pre_reboot_delay: 0
         post_reboot_delay: 10
         reboot_timeout: 900
         test_command: "whoami"
 
-    - name: Mark success
+    - name: Register success
       ansible.builtin.set_fact:
         restarted_ok: "{{ restarted_ok + [inventory_hostname] }}"
       delegate_to: localhost
 
-    - name: Pause 30s before next host
+    - name: Pause 30 seconds before next droplet
       ansible.builtin.pause:
         seconds: 30
 
   rescue:
-    - name: Mark failure
+    - name: Register failure
       ansible.builtin.set_fact:
         restarted_fail: "{{ restarted_fail + [inventory_hostname] }}"
       delegate_to: localhost
 
-    - name: Announce host failure (Slack)
+    - name: Notify failure on Slack
       ansible.builtin.uri:
         url: "{{ slack_webhook_url }}"
         method: POST
@@ -89,17 +83,21 @@
           Content-Type: "application/json"
         body_format: json
         body:
-          text: "❗ Reboot FAILED on *{{ inventory_hostname }}*"
+          text: "❗ Reboot failed for *{{ inventory_hostname }}* ({{ ansible_host }})"
       delegate_to: localhost
       when: slack_webhook_url is defined
       ignore_errors: true
 
-    - name: Pause 30s before next host (after failure)
-      ansible.builtin.pause:
-        seconds: 30
-
   always:
-    - name: Final Slack summary
+    - name: Calculate total duration
+      ansible.builtin.set_fact:
+        total_duration: "{{ (lookup('pipe', 'date +%s') | int - start_time) | int }}"
+        minutes: "{{ (total_duration // 60) | int }}"
+        seconds: "{{ (total_duration % 60) | int }}"
+      run_once: true
+      delegate_to: localhost
+
+    - name: Slack summary
       ansible.builtin.uri:
         url: "{{ slack_webhook_url }}"
         method: POST
@@ -108,10 +106,13 @@
         body_format: json
         body:
           text: >-
-            ✅ Rebooted: {{ (restarted_ok | default([])) | unique | join(', ') | default('none') }}
+            ✅ *Reboot Summary*:
+            - Successful: {{ restarted_ok | unique | join(', ') | default('none') }}
             {% if (restarted_fail | default([])) | length > 0 %}
-            ❌ Failed: {{ restarted_fail | unique | join(', ') }}
+            - Failed: {{ restarted_fail | unique | join(', ') }}
             {% endif %}
+            - ⏱️ Completed in {{ minutes }}m {{ seconds }}s.
+            - Total servers processed: {{ (restarted_ok | length + restarted_fail | length) }}
       run_once: true
       delegate_to: localhost
       when: slack_webhook_url is defined
