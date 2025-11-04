@@ -18,9 +18,13 @@
   when: slack_webhook_url is defined
   ignore_errors: true
 
-- name: Reboot droplet remotely via SSH
-  ansible.builtin.shell: |
-    ssh -o StrictHostKeyChecking=no deploy@{{ droplet_ip }} 'sudo reboot'
+- name: Reboot droplet using Ansible connection
+  delegate_to: "{{ droplet_ip }}"
+  become: yes
+  become_user: root
+  ansible.builtin.reboot:
+    reboot_timeout: 180
+    test_command: uptime
   register: reboot_result
   ignore_errors: true
 
