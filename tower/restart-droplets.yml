@@ -21,7 +21,7 @@
       run_once: true
       delegate_to: localhost
 
-    - name: Notify start on Slack
+    - name: Notify global start on Slack
       ansible.builtin.uri:
         url: "{{ slack_webhook_url }}"
         method: POST
@@ -40,8 +40,9 @@
       ansible.builtin.meta: end_host
       when: inventory_hostname not in selected_droplets
 
-    - block:
-        - name: Announce reboot start on Slack
+    - name: Process each selected droplet
+      block:
+        - name: Announce reboot start for host
           ansible.builtin.uri:
             url: "{{ slack_webhook_url }}"
             method: POST
@@ -66,6 +67,19 @@
             restarted_ok: "{{ restarted_ok + [inventory_hostname] }}"
           delegate_to: localhost
 
+        - name: Notify success on Slack
+          ansible.builtin.uri:
+            url: "{{ slack_webhook_url }}"
+            method: POST
+            headers:
+              Content-Type: "application/json"
+            body_format: json
+            body:
+              text: "✅ *{{ inventory_hostname }}* reboot completed successfully."
+          delegate_to: localhost
+          when: slack_webhook_url is defined
+          ignore_errors: true
+
         - name: Pause 30 seconds before next droplet
           ansible.builtin.pause:
             seconds: 30
@@ -89,6 +103,11 @@
           when: slack_webhook_url is defined
           ignore_errors: true
 
+      always:
+        - name: Ensure continuation to next droplet
+          debug:
+            msg: "Continuing to next droplet..."
+
   post_tasks:
     - name: Calculate total duration
       ansible.builtin.set_fact:
@@ -98,7 +117,7 @@
       run_once: true
       delegate_to: localhost
 
-    - name: Slack summary
+    - name: Send final Slack summary
       ansible.builtin.uri:
         url: "{{ slack_webhook_url }}"
         method: POST
@@ -108,7 +127,7 @@
         body:
           text: >-
             {% if (restarted_fail | length | int) == 0 %}
-            ✅ *Reboot Summary*:
+            ✅ *Reboot Summary (All Successful)*:
             {% else %}
             ⚠️ *Reboot Summary (Partial Failures)*:
             {% endif %}
