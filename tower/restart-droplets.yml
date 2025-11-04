@@ -1,8 +1,7 @@
 ---
-- name: Restart selected DigitalOcean droplets (by name, sequentially)
-  hosts: digital_ocean
+- name: Restart selected DigitalOcean droplets sequentially (clean + ordered)
+  hosts: localhost
   gather_facts: no
-  serial: 1
 
   vars:
     selected_droplets: "{{ survey_droplets | default([]) }}"
@@ -18,8 +17,6 @@
           - selected_droplets | length > 0
         fail_msg: "❌ Please select at least one droplet to reboot."
         success_msg: "✅ Selected droplets: {{ selected_droplets | join(', ') }}"
-      run_once: true
-      delegate_to: localhost
 
     - name: Notify global start on Slack
       ansible.builtin.uri:
@@ -29,20 +26,25 @@
           Content-Type: "application/json"
         body_format: json
         body:
-          text: "⚙️ Starting reboot process for: {{ selected_droplets | join(', ') }}"
-      run_once: true
-      delegate_to: localhost
+          text: >-
+            ⚙️ Starting reboot process for: {{ selected_droplets | join(', ') }}
+            \nTotal servers: {{ selected_droplets | length }}
       when: slack_webhook_url is defined
       ignore_errors: true
 
   tasks:
-    - name: Skip hosts not selected
-      ansible.builtin.meta: end_host
-      when: inventory_hostname not in selected_droplets
-
-    - name: Process each selected droplet
+    - name: Sequentially reboot each selected droplet
+      loop: "{{ selected_droplets }}"
+      loop_control:
+        loop_var: droplet_name
+        index_var: droplet_index
       block:
-        - name: Announce reboot start for host
+        - name: Resolve droplet IP from inventory
+          set_fact:
+            droplet_ip: "{{ hostvars[droplet_name].ansible_host | default('unknown') }}"
+          when: hostvars[droplet_name] is defined
+
+        - name: Announce reboot start for droplet
           ansible.builtin.uri:
             url: "{{ slack_webhook_url }}"
             method: POST
@@ -50,63 +52,42 @@
               Content-Type: "application/json"
             body_format: json
             body:
-              text: "🔄 Rebooting *{{ inventory_hostname }}* ({{ ansible_host }})..."
-          delegate_to: localhost
+              text: >-
+                🔄 *Step {{ droplet_index + 1 }}/{{ selected_droplets | length }}:* Rebooting *{{ droplet_name }}*
+                ({{ droplet_ip }})...
           when: slack_webhook_url is defined
           ignore_errors: true
 
-        - name: Reboot droplet
-          become: true
-          ansible.builtin.reboot:
-            post_reboot_delay: 10
-            reboot_timeout: 900
-            test_command: "whoami"
-
-        - name: Register success
-          ansible.builtin.set_fact:
-            restarted_ok: "{{ restarted_ok + [inventory_hostname] }}"
-          delegate_to: localhost
-
-        - name: Notify success on Slack
-          ansible.builtin.uri:
-            url: "{{ slack_webhook_url }}"
-            method: POST
-            headers:
-              Content-Type: "application/json"
-            body_format: json
-            body:
-              text: "✅ *{{ inventory_hostname }}* reboot completed successfully."
-          delegate_to: localhost
-          when: slack_webhook_url is defined
+        - name: Reboot droplet remotely via SSH
+          ansible.builtin.shell: |
+            ssh -o StrictHostKeyChecking=no deploy@{{ droplet_ip }} 'sudo reboot'
+          register: reboot_result
           ignore_errors: true
 
-        - name: Pause 30 seconds before next droplet
+        - name: Pause 30 seconds before next
           ansible.builtin.pause:
             seconds: 30
 
-      rescue:
-        - name: Register failure
-          ansible.builtin.set_fact:
-            restarted_fail: "{{ restarted_fail + [inventory_hostname] }}"
-          delegate_to: localhost
+        - name: Record success or failure
+          set_fact:
+            restarted_ok: "{{ restarted_ok + [droplet_name] if reboot_result.rc == 0 else restarted_ok }}"
+            restarted_fail: "{{ restarted_fail + [droplet_name] if reboot_result.rc != 0 else restarted_fail }}"
 
-        - name: Notify failure on Slack
+        - name: Notify per-droplet result on Slack
           ansible.builtin.uri:
             url: "{{ slack_webhook_url }}"
             method: POST
             headers:
               Content-Type: "application/json"
             body_format: json
-            body:
-              text: "❗ Reboot failed for *{{ inventory_hostname }}* ({{ ansible_host }})"
-          delegate_to: localhost
+            body: >-
+              {% if reboot_result.rc == 0 %}
+              ✅ *{{ droplet_name }}* rebooted successfully ({{ droplet_ip }}).
+              {% else %}
+              ❌ Failed to reboot *{{ droplet_name }}* ({{ droplet_ip }}).
+              {% endif %}
           when: slack_webhook_url is defined
           ignore_errors: true
-
-      always:
-        - name: Ensure continuation to next droplet
-          debug:
-            msg: "Continuing to next droplet..."
 
   post_tasks:
     - name: Calculate total duration
@@ -114,8 +95,6 @@
         total_duration: "{{ (lookup('pipe', 'date +%s') | int - start_time) | int }}"
         minutes: "{{ (total_duration // 60) | int }}"
         seconds: "{{ (total_duration % 60) | int }}"
-      run_once: true
-      delegate_to: localhost
 
     - name: Send final Slack summary
       ansible.builtin.uri:
@@ -126,18 +105,17 @@
         body_format: json
         body:
           text: >-
-            {% if (restarted_fail | length | int) == 0 %}
+            {% if restarted_fail | length == 0 %}
             ✅ *Reboot Summary (All Successful)*:
             {% else %}
             ⚠️ *Reboot Summary (Partial Failures)*:
             {% endif %}
-            - Successful: {{ restarted_ok | unique | join(', ') | default('none') }}
-            {% if (restarted_fail | default([])) | length > 0 %}
-            - Failed: {{ restarted_fail | unique | join(', ') }}
+            - Successful: {{ restarted_ok | join(', ') | default('none') }}
+            {% if restarted_fail | length > 0 %}
+            - Failed: {{ restarted_fail | join(', ') }}
             {% endif %}
-            - ⏱️ Completed in {{ minutes }}m {{ seconds }}s.
+            - ⏱️ Duration: {{ minutes }}m {{ seconds }}s.
             - Total servers processed: {{ (restarted_ok | length + restarted_fail | length) }}
-      run_once: true
-      delegate_to: localhost
+            - Order executed: {% for item in selected_droplets %}{{ loop.index }}️⃣ {{ item }} {% endfor %}
       when: slack_webhook_url is defined
       ignore_errors: true
