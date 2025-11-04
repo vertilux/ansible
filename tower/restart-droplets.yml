@@ -1,4 +1,53 @@
-# Play 2: reiniciar serial=1 con manejo de errores sin detener todo
+---
+- name: Build transient group with selected droplets
+  hosts: localhost
+  gather_facts: no
+
+  vars:
+    selected_droplets: "{{ droplet_names | default([]) }}"
+    slack_webhook_url: "{{ SLACK_WEBHOOK_URL | default('') }}"
+
+  tasks:
+    - name: Validate survey input
+      assert:
+        that: selected_droplets | length > 0
+        fail_msg: "❌ You must select at least one droplet by name."
+        success_msg: "✅ Selected droplets: {{ selected_droplets | join(', ') }}"
+
+    - name: Resolve selected droplets to IPs (from inventory)
+      set_fact:
+        droplet_ips: "{{ droplet_ips | default({}) | combine({item: hostvars[item].ansible_host}) }}"
+      loop: "{{ selected_droplets }}"
+      when: hostvars[item] is defined
+
+    - name: Fail if any droplet lacks IP in inventory
+      assert:
+        that: droplet_ips | length == selected_droplets | length
+        fail_msg: "❌ Some selected droplets are missing IPs in the inventory."
+        success_msg: "✅ All selected droplets have IPs."
+
+    - name: Create transient group 'reboot_batch'
+      add_host:
+        name: "{{ item.key }}"
+        ansible_host: "{{ item.value }}"
+        groups: reboot_batch
+      loop: "{{ droplet_ips | dict2items }}"
+
+    - name: Send global start message to Slack
+      when: slack_webhook_url | length > 0
+      uri:
+        url: "{{ slack_webhook_url }}"
+        method: POST
+        headers:
+          Content-Type: "application/json"
+        body_format: json
+        body:
+          text: "⚙️ Starting sequential reboot of *{{ selected_droplets | join(', ') }}* droplets..."
+      changed_when: false
+      ignore_errors: true
+
+
+# Segundo play — reinicios reales
 - name: Sequentially reboot selected droplets
   hosts: reboot_batch
   gather_facts: false
@@ -6,7 +55,7 @@
   vars:
     slack_webhook_url: "{{ SLACK_WEBHOOK_URL | default('') }}"
   tasks:
-    - name: Announce per-droplet start
+    - name: Announce droplet reboot on Slack
       when: slack_webhook_url | length > 0
       uri:
         url: "{{ slack_webhook_url }}"
@@ -14,36 +63,31 @@
         headers: { Content-Type: "application/json" }
         body_format: json
         body:
-          text: "🔄 Rebooting *{{ inventory_hostname }}* ({{ ansible_host }})…"
+          text: "🔄 Rebooting *{{ inventory_hostname }}* ({{ ansible_host }})..."
       changed_when: false
       ignore_errors: true
 
     - block:
-        # Intento principal: módulo reboot
-        - name: Attempt controlled reboot
+        - name: Try normal Ansible reboot first
           become: true
-          become_method: sudo
           reboot:
             reboot_timeout: 180
             test_command: "uptime"
-          register: reboot_main
+          register: reboot_result
           ignore_errors: true
 
-        # Fallback si falla el reboot module
-        - name: Fallback reboot using shutdown (async)
-          when: reboot_main is failed
+        - name: Force fallback reboot if needed (handles low disk)
+          when: reboot_result is failed
           shell: "nohup /usr/bin/sudo /sbin/shutdown -r now >/dev/null 2>&1 &"
           async: 1
           poll: 0
-          register: reboot_fallback
+          register: forced_reboot
           ignore_errors: true
 
-        # Espera 15 segundos antes de verificar
-        - name: Wait short grace period before checking return
+        - name: Wait 15 seconds before checking
           pause:
             seconds: 15
 
-        # Espera que vuelva
         - name: Wait for droplet to come back online
           wait_for_connection:
             delay: 10
@@ -52,18 +96,17 @@
           ignore_errors: true
 
       rescue:
-        - name: Mark reboot as failed
-          set_fact:
-            droplet_ok: false
-      always:
-        - name: Evaluate result even if failed
-          set_fact:
-            droplet_ok: >-
-              {{ (reboot_main is defined and reboot_main is succeeded)
-                 or (back_up is defined and back_up is succeeded)
-                 or false }}
+        - debug:
+            msg: "⚠️ Rescue: {{ inventory_hostname }} encountered reboot failure."
 
-        - name: Send per-droplet status to Slack
+      always:
+        - name: Determine reboot success
+          set_fact:
+            reboot_success: >-
+              {{ (reboot_result is defined and reboot_result is succeeded)
+              or (back_up is defined and back_up is succeeded) }}
+
+        - name: Notify Slack of reboot result
           when: slack_webhook_url | length > 0
           uri:
             url: "{{ slack_webhook_url }}"
@@ -71,14 +114,14 @@
             headers: { Content-Type: "application/json" }
             body_format: json
             body: >-
-              {% if droplet_ok %}
-              {"text":"✅ *{{ inventory_hostname }}* rebooted successfully ({{ ansible_host }})."}
+              {% if reboot_success %}
+              {"text":"✅ *{{ inventory_hostname }}* rebooted successfully."}
               {% else %}
-              {"text":"❌ *{{ inventory_hostname }}* reboot failed or could not complete ({{ ansible_host }})."}
+              {"text":"❌ *{{ inventory_hostname }}* reboot failed or did not respond in time."}
               {% endif %}
           changed_when: false
           ignore_errors: true
 
-        - name: Pause before next droplet
+        - name: Wait 15 seconds before next droplet
           pause:
             seconds: 15
