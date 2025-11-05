@@ -3,12 +3,10 @@
 - name: Build transient group with selected droplets
   hosts: localhost
   gather_facts: no
-
   vars:
     selected_droplets: "{{ droplet_names | default([]) }}"
     slack_webhook_url: "{{ SLACK_WEBHOOK_URL | default('') }}"
     start_time: "{{ lookup('pipe', 'date +%s') }}"
-
     droplet_map:
       production-lb01: 165.227.210.87
       production-lb02: 159.203.94.161
@@ -22,7 +20,6 @@
       restful-api: 137.184.63.106
       erp-test-stage: 165.227.69.194
       sunlux: 45.55.36.150
-
   tasks:
     - name: Validate survey input
       assert:
@@ -61,18 +58,14 @@
           text: "⚙️ Starting sequential reboot of *{{ selected_droplets | join(', ') }}* droplets..."
       changed_when: false
       ignore_errors: true
-
-
 ---
 # 2️⃣ Sequential reboot process
 - name: Sequentially reboot selected droplets
   hosts: reboot_batch
   gather_facts: false
   serial: 1
-
   vars:
     slack_webhook_url: "{{ SLACK_WEBHOOK_URL | default('') }}"
-
   tasks:
     - name: Announce droplet reboot on Slack
       when: slack_webhook_url | length > 0
@@ -145,18 +138,14 @@
         - name: Pause before next droplet
           pause:
             seconds: 2
-
-
 ---
 # 3️⃣ Slack summary
 - name: Summarize reboot results
   hosts: localhost
   gather_facts: no
-
   vars:
     slack_webhook_url: "{{ SLACK_WEBHOOK_URL | default('') }}"
     end_time: "{{ lookup('pipe', 'date +%s') }}"
-
   tasks:
     - name: Compute total time
       set_fact:
