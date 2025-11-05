@@ -1,0 +1,42 @@
+- name: Announce droplet reboot on Slack
+  when: slack_webhook_url | length > 0
+  uri:
+    url: "{{ slack_webhook_url }}"
+    method: POST
+    headers:
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      text: "🔄 Rebooting *{{ droplet_name }}* ({{ droplet_ip }})..."
+  changed_when: false
+  ignore_errors: true
+
+- name: Reboot droplet via SSH
+  delegate_to: "{{ droplet_ip }}"
+  become: true
+  reboot:
+    reboot_timeout: 120
+    test_command: "uptime"
+  register: reboot_result
+  ignore_errors: true
+
+- name: Pause between droplets
+  pause:
+    seconds: 2
+
+- name: Notify Slack result
+  when: slack_webhook_url | length > 0
+  uri:
+    url: "{{ slack_webhook_url }}"
+    method: POST
+    headers:
+      Content-Type: "application/json"
+    body_format: json
+    body: >-
+      {% if reboot_result is succeeded %}
+      {"text":"✅ *{{ droplet_name }}* rebooted successfully."}
+      {% else %}
+      {"text":"⚠️ *{{ droplet_name }}* reboot failed or unresponsive."}
+      {% endif %}
+  changed_when: false
+  ignore_errors: true
