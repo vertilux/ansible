@@ -63,7 +63,6 @@
       changed_when: false
       ignore_errors: true
 
-    # exportar variables a plays siguientes
     - name: Share facts for later plays
       set_stats:
         data:
@@ -96,8 +95,6 @@
       changed_when: false
       ignore_errors: true
 
-    # Usamos reboot y esperamos reconexión. Si el host está muy mal (disco lleno, etc),
-    # puede fallar; lo toleramos y seguimos con el resto.
     - name: Reboot host
       reboot:
         reboot_timeout: 180
@@ -127,16 +124,15 @@
       ignore_errors: true
 
     - name: Aggregate results
-      set_stats:
-        aggregate: true
-        data:
-          reboot_summary: >-
-            {{ (reboot_summary | default([])) +
-               [ { 'name': inventory_hostname,
-                   'ip': ansible_host,
-                   'ok': (rb is succeeded) and (rb.rebooted | default(false)) } ] }}
+      set_fact:
+        reboot_summary: >-
+          {{ (hostvars['localhost']['reboot_summary'] | default([])) +
+             [ { 'name': inventory_hostname,
+                 'ip': ansible_host,
+                 'ok': (rb is succeeded) and (rb.rebooted | default(false)) } ] }}
+      delegate_to: localhost
 
-# Play 3: resumen final y tiempo total
+# Play 3: resumen final y tiempo total (Slack garantizado)
 - name: Final Slack summary
   hosts: localhost
   gather_facts: no
@@ -146,29 +142,23 @@
     end_epoch: "{{ lookup('pipe','date +%s') | int }}"
     elapsed_sec: "{{ end_epoch - start_epoch }}"
     elapsed_str: "{{ (elapsed_sec // 60) | int }}m {{ (elapsed_sec % 60) | int }}s"
+    summary_ok: "{{ reboot_summary | default([]) | selectattr('ok', 'equalto', true) | map(attribute='name') | list }}"
+    summary_fail: "{{ reboot_summary | default([]) | selectattr('ok', 'equalto', false) | map(attribute='name') | list }}"
 
   tasks:
-    - name: Build success/failure counts
-      set_fact:
-        _sum: "{{ hostvars['localhost']['reboot_summary'] | default([]) }}"
-        ok_count: "{{ (_sum | selectattr('ok', 'equalto', true) | list) | length }}"
-        fail_count: "{{ (_sum | selectattr('ok', 'equalto', false) | list) | length }}"
-        names_ok: "{{ _sum | selectattr('ok','equalto',true) | map(attribute='name') | list }}"
-        names_fail: "{{ _sum | selectattr('ok','equalto',false) | map(attribute='name') | list }}"
-
-    - name: Send final Slack message (once)
+    - name: Notify final summary on Slack
       when: slack_webhook_url | length > 0
-      uri:
+      ansible.builtin.uri:
         url: "{{ slack_webhook_url }}"
         method: POST
         headers:
           Content-Type: "application/json"
         body_format: json
-        body:
-          text: >-
-            ✅ Reboot sequence completed in {{ elapsed_str }}.
-            *Success:* {{ ok_count }} | *Failed:* {{ fail_count }}
-            {% if names_ok|length>0 %}• OK: {{ names_ok | join(', ') }}{% endif %}
-            {% if names_fail|length>0 %}• Failed: {{ names_fail | join(', ') }}{% endif %}
+        body: >-
+          {
+            "text": "✅ *Reboot sequence completed* in {{ elapsed_str }}.\n
+            • Successful: {{ summary_ok | join(', ') | default('none') }}\n
+            • Failed: {{ summary_fail | join(', ') | default('none') }}"
+          }
       changed_when: false
       ignore_errors: true
