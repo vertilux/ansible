@@ -26,26 +26,22 @@
         that: selected_droplets | length > 0
         fail_msg: "❌ You must select at least one droplet by name."
         success_msg: "✅ Selected droplets: {{ selected_droplets | join(', ') }}"
-
     - name: Resolve selected droplets using droplet_map
       set_fact:
         droplet_ips: "{{ droplet_ips | default({}) | combine({item: droplet_map[item]}) }}"
       loop: "{{ selected_droplets }}"
       when: droplet_map[item] is defined
-
     - name: Fail if any droplet is missing in map
       assert:
         that: droplet_ips | length == selected_droplets | length
         fail_msg: "❌ Some selected droplets are missing from droplet_map."
         success_msg: "✅ All selected droplets resolved to IPs."
-
     - name: Create transient group 'reboot_batch'
       add_host:
         name: "{{ item.key }}"
         ansible_host: "{{ item.value }}"
         groups: reboot_batch
       loop: "{{ droplet_ips | dict2items }}"
-
     - name: Notify start on Slack
       when: slack_webhook_url | length > 0
       uri:
@@ -79,7 +75,6 @@
           text: "🔄 Rebooting *{{ inventory_hostname }}* ({{ ansible_host }})..."
       changed_when: false
       ignore_errors: true
-
     - block:
         - name: Attempt normal reboot
           become: true
@@ -88,36 +83,30 @@
             test_command: "uptime"
           register: reboot_result
           ignore_errors: true
-
         - name: Fallback reboot command (if normal fails)
           when: reboot_result is failed
           shell: "nohup /usr/bin/sudo /sbin/shutdown -r now >/dev/null 2>&1 &"
           async: 1
           poll: 0
           ignore_errors: true
-
         - name: Wait 2 seconds before checking
           pause:
             seconds: 2
-
         - name: Wait for host to come back
           wait_for_connection:
             delay: 2
             timeout: 90
           register: back_up
           ignore_errors: true
-
       always:
         - name: Determine reboot success
           set_fact:
             reboot_success: >-
               {{ (reboot_result is defined and reboot_result is succeeded)
               or (back_up is defined and back_up is succeeded) }}
-
         - name: Record reboot result
           set_fact:
             reboot_results_all: "{{ reboot_results_all | default({}) | combine({inventory_hostname: reboot_success}) }}"
-
         - name: Notify Slack of result
           when: slack_webhook_url | length > 0
           uri:
@@ -134,7 +123,6 @@
               {% endif %}
           changed_when: false
           ignore_errors: true
-
         - name: Pause before next droplet
           pause:
             seconds: 2
@@ -150,7 +138,6 @@
     - name: Compute total time
       set_fact:
         elapsed_seconds: "{{ end_time | int - start_time | int }}"
-
     - name: Build Slack summary
       set_fact:
         summary_msg: |
@@ -162,7 +149,6 @@
           ❌ *{{ failed }}* failed: {{ reboot_results_all | dict2items | selectattr('value','equalto',false) | map(attribute='key') | join(', ') }}
           {% endif %}
           ⏱️ Total time: {{ elapsed_seconds }} sec
-
     - name: Send summary to Slack
       when: slack_webhook_url | length > 0
       uri:
