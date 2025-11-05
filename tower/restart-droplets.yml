@@ -8,7 +8,7 @@
     selected_droplets: "{{ droplet_names | default([]) }}"
     slack_webhook_url: "{{ SLACK_WEBHOOK_URL | default('') }}"
     start_time: "{{ lookup('pipe', 'date +%s') }}"
-  droplet_map:
+    droplet_map:
       production-lb01: 165.227.210.87
       production-lb02: 159.203.94.161
       production-lb03: 134.209.34.218
