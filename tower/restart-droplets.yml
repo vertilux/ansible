@@ -1,11 +1,12 @@
-# Restart selected DigitalOcean droplets (single YAML for AWX)
+# Restart selected DigitalOcean droplets (AWX-safe single doc)
 - name: Restart selected DigitalOcean droplets (AWX-safe single doc)
   hosts: localhost
   gather_facts: no
   vars:
     selected_droplets: "{{ droplet_names | default([]) }}"
     slack_webhook_url: "{{ SLACK_WEBHOOK_URL | default('') }}"
-    start_time: "{{ lookup('pipe', 'date +%s') }}"
+    start_epoch: "{{ lookup('pipe', 'date +%s') }}"
+
     droplet_map:
       production-lb01: 165.227.210.87
       production-lb02: 159.203.94.161
@@ -19,6 +20,7 @@
       restful-api: 137.184.63.106
       erp-test-stage: 165.227.69.194
       sunlux: 45.55.36.150
+
   tasks:
     - name: Validate survey input
       assert:
@@ -47,7 +49,7 @@
 
     - name: Notify start on Slack
       when: slack_webhook_url | length > 0
-      uri:
+      ansible.builtin.uri:
         url: "{{ slack_webhook_url }}"
         method: POST
         headers:
@@ -58,6 +60,7 @@
       changed_when: false
       ignore_errors: true
 
+    # --- NO TOCAR LA LÓGICA DE REBOOT: se mantiene igual, solo se incluye ---
     - name: Reboot droplets sequentially
       include_tasks: _reboot_droplet.yml
       loop: "{{ droplet_ips | dict2items }}"
@@ -67,4 +70,30 @@
         droplet_name: "{{ current.key }}"
         droplet_ip: "{{ current.value }}"
         slack_webhook_url: "{{ slack_webhook_url }}"
-        start_time: "{{ start_time }}"
+
+    # --- NUEVO: calcular tiempo total y enviar mensaje final a Slack ---
+    - name: Compute total duration (seconds)
+      set_fact:
+        end_epoch: "{{ lookup('pipe','date +%s') }}"
+        elapsed_sec: "{{ (lookup('pipe','expr ' ~ (lookup('pipe','date +%s')) ~ ' - ' ~ start_epoch)) | int }}"
+
+    - name: Format duration as mm:ss
+      set_fact:
+        elapsed_str: >-
+          {{ (elapsed_sec // 60) | int }}m {{ (elapsed_sec % 60) | int }}s
+
+    - name: Notify final summary on Slack
+      when: slack_webhook_url | length > 0
+      ansible.builtin.uri:
+        url: "{{ slack_webhook_url }}"
+        method: POST
+        headers:
+          Content-Type: "application/json"
+        body_format: json
+        body:
+          text: >-
+            ✅ Reboot sequence completed for:
+            {{ selected_droplets | join(', ') }}
+            ⏱️ Completed in {{ elapsed_str }}.
+      changed_when: false
+      ignore_errors: true
