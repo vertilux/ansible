@@ -1,5 +1,6 @@
-# Restart selected DigitalOcean droplets (AWX-safe single doc)
-- name: Restart selected DigitalOcean droplets (AWX-safe single doc)
+---
+# Play 1: preparar lote y avisar inicio
+- name: Build transient group and announce start
   hosts: localhost
   gather_facts: no
   vars:
@@ -7,6 +8,7 @@
     slack_webhook_url: "{{ SLACK_WEBHOOK_URL | default('') }}"
     start_epoch: "{{ lookup('pipe', 'date +%s') }}"
 
+    # Mapa nombre -> IP (no cambia tu inventario actual)
     droplet_map:
       production-lb01: 165.227.210.87
       production-lb02: 159.203.94.161
@@ -28,7 +30,7 @@
         fail_msg: "❌ You must select at least one droplet by name."
         success_msg: "✅ Selected droplets: {{ selected_droplets | join(', ') }}"
 
-    - name: Resolve selected droplets using droplet_map
+    - name: Build mapping only for selected droplets
       set_fact:
         droplet_ips: "{{ droplet_ips | default({}) | combine({item: droplet_map[item]}) }}"
       loop: "{{ selected_droplets }}"
@@ -47,44 +49,116 @@
         groups: reboot_batch
       loop: "{{ droplet_ips | dict2items }}"
 
-    - name: Notify start on Slack
+    - name: Notify start on Slack (once)
       when: slack_webhook_url | length > 0
-      ansible.builtin.uri:
+      run_once: true
+      uri:
         url: "{{ slack_webhook_url }}"
         method: POST
         headers:
           Content-Type: "application/json"
         body_format: json
         body:
-          text: "⚙️ Starting sequential reboot of *{{ selected_droplets | join(', ') }}* droplets..."
+          text: "⚙️ Starting sequential reboot of: {{ selected_droplets | join(', ') }}"
       changed_when: false
       ignore_errors: true
 
-    # --- NO TOCAR LA LÓGICA DE REBOOT: se mantiene igual, solo se incluye ---
-    - name: Reboot droplets sequentially
-      include_tasks: _reboot_droplet.yml
-      loop: "{{ droplet_ips | dict2items }}"
-      loop_control:
-        loop_var: current
-      vars:
-        droplet_name: "{{ current.key }}"
-        droplet_ip: "{{ current.value }}"
-        slack_webhook_url: "{{ slack_webhook_url }}"
+    # exportar variables a plays siguientes
+    - name: Share facts for later plays
+      set_stats:
+        data:
+          reboot_selected: "{{ selected_droplets }}"
+          reboot_map: "{{ droplet_ips }}"
+          reboot_start_epoch: "{{ start_epoch }}"
+          slack_url_shared: "{{ slack_webhook_url }}"
 
-    # --- NUEVO: calcular tiempo total y enviar mensaje final a Slack ---
-    - name: Compute total duration (seconds)
-      set_fact:
-        end_epoch: "{{ lookup('pipe','date +%s') }}"
-        elapsed_sec: "{{ (lookup('pipe','expr ' ~ (lookup('pipe','date +%s')) ~ ' - ' ~ start_epoch)) | int }}"
+# Play 2: reiniciar, uno por uno, con mensajes por host y tolerando fallas
+- name: Sequentially reboot selected droplets
+  hosts: reboot_batch
+  gather_facts: no
+  serial: 1
+  become: yes
 
-    - name: Format duration as mm:ss
-      set_fact:
-        elapsed_str: >-
-          {{ (elapsed_sec // 60) | int }}m {{ (elapsed_sec % 60) | int }}s
+  vars:
+    slack_webhook_url: "{{ hostvars['localhost']['slack_url_shared'] | default('') }}"
 
-    - name: Notify final summary on Slack
+  tasks:
+    - name: Announce per-host reboot to Slack
       when: slack_webhook_url | length > 0
-      ansible.builtin.uri:
+      uri:
+        url: "{{ slack_webhook_url }}"
+        method: POST
+        headers:
+          Content-Type: "application/json"
+        body_format: json
+        body:
+          text: "🔄 Rebooting *{{ inventory_hostname }}* ({{ ansible_host }})..."
+      changed_when: false
+      ignore_errors: true
+
+    # Usamos reboot y esperamos reconexión. Si el host está muy mal (disco lleno, etc),
+    # puede fallar; lo toleramos y seguimos con el resto.
+    - name: Reboot host
+      reboot:
+        reboot_timeout: 180
+        test_command: "uptime"
+      register: rb
+      ignore_errors: true
+
+    - name: Pause between droplets
+      pause:
+        seconds: 2
+
+    - name: Report per-host result to Slack
+      when: slack_webhook_url | length > 0
+      uri:
+        url: "{{ slack_webhook_url }}"
+        method: POST
+        headers:
+          Content-Type: "application/json"
+        body_format: json
+        body: >-
+          {% if (rb is succeeded) and (rb.rebooted | default(false)) %}
+          {"text":"✅ *{{ inventory_hostname }}* rebooted successfully."}
+          {% else %}
+          {"text":"⚠️ *{{ inventory_hostname }}* reboot failed or did not confirm."}
+          {% endif %}
+      changed_when: false
+      ignore_errors: true
+
+    - name: Aggregate results
+      set_stats:
+        aggregate: true
+        data:
+          reboot_summary: >-
+            {{ (reboot_summary | default([])) +
+               [ { 'name': inventory_hostname,
+                   'ip': ansible_host,
+                   'ok': (rb is succeeded) and (rb.rebooted | default(false)) } ] }}
+
+# Play 3: resumen final y tiempo total
+- name: Final Slack summary
+  hosts: localhost
+  gather_facts: no
+  vars:
+    slack_webhook_url: "{{ hostvars['localhost']['slack_url_shared'] | default('') }}"
+    start_epoch: "{{ hostvars['localhost']['reboot_start_epoch'] | int }}"
+    end_epoch: "{{ lookup('pipe','date +%s') | int }}"
+    elapsed_sec: "{{ end_epoch - start_epoch }}"
+    elapsed_str: "{{ (elapsed_sec // 60) | int }}m {{ (elapsed_sec % 60) | int }}s"
+
+  tasks:
+    - name: Build success/failure counts
+      set_fact:
+        _sum: "{{ hostvars['localhost']['reboot_summary'] | default([]) }}"
+        ok_count: "{{ (_sum | selectattr('ok', 'equalto', true) | list) | length }}"
+        fail_count: "{{ (_sum | selectattr('ok', 'equalto', false) | list) | length }}"
+        names_ok: "{{ _sum | selectattr('ok','equalto',true) | map(attribute='name') | list }}"
+        names_fail: "{{ _sum | selectattr('ok','equalto',false) | map(attribute='name') | list }}"
+
+    - name: Send final Slack message (once)
+      when: slack_webhook_url | length > 0
+      uri:
         url: "{{ slack_webhook_url }}"
         method: POST
         headers:
@@ -92,8 +166,9 @@
         body_format: json
         body:
           text: >-
-            ✅ Reboot sequence completed for:
-            {{ selected_droplets | join(', ') }}
-            ⏱️ Completed in {{ elapsed_str }}.
+            ✅ Reboot sequence completed in {{ elapsed_str }}.
+            *Success:* {{ ok_count }} | *Failed:* {{ fail_count }}
+            {% if names_ok|length>0 %}• OK: {{ names_ok | join(', ') }}{% endif %}
+            {% if names_fail|length>0 %}• Failed: {{ names_fail | join(', ') }}{% endif %}
       changed_when: false
       ignore_errors: true
