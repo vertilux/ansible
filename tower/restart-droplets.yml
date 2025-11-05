@@ -1,6 +1,5 @@
----
-# 1️⃣ Build transient group for selected droplets
-- name: Build transient group with selected droplets
+# Restart selected DigitalOcean droplets (single YAML for AWX)
+- name: Restart selected DigitalOcean droplets (AWX-safe single doc)
   hosts: localhost
   gather_facts: no
   vars:
@@ -26,22 +25,26 @@
         that: selected_droplets | length > 0
         fail_msg: "❌ You must select at least one droplet by name."
         success_msg: "✅ Selected droplets: {{ selected_droplets | join(', ') }}"
+
     - name: Resolve selected droplets using droplet_map
       set_fact:
         droplet_ips: "{{ droplet_ips | default({}) | combine({item: droplet_map[item]}) }}"
       loop: "{{ selected_droplets }}"
       when: droplet_map[item] is defined
+
     - name: Fail if any droplet is missing in map
       assert:
         that: droplet_ips | length == selected_droplets | length
         fail_msg: "❌ Some selected droplets are missing from droplet_map."
         success_msg: "✅ All selected droplets resolved to IPs."
+
     - name: Create transient group 'reboot_batch'
       add_host:
         name: "{{ item.key }}"
         ansible_host: "{{ item.value }}"
         groups: reboot_batch
       loop: "{{ droplet_ips | dict2items }}"
+
     - name: Notify start on Slack
       when: slack_webhook_url | length > 0
       uri:
@@ -54,110 +57,14 @@
           text: "⚙️ Starting sequential reboot of *{{ selected_droplets | join(', ') }}* droplets..."
       changed_when: false
       ignore_errors: true
----
-# 2️⃣ Sequential reboot process
-- name: Sequentially reboot selected droplets
-  hosts: reboot_batch
-  gather_facts: false
-  serial: 1
-  vars:
-    slack_webhook_url: "{{ SLACK_WEBHOOK_URL | default('') }}"
-  tasks:
-    - name: Announce droplet reboot on Slack
-      when: slack_webhook_url | length > 0
-      uri:
-        url: "{{ slack_webhook_url }}"
-        method: POST
-        headers:
-          Content-Type: "application/json"
-        body_format: json
-        body:
-          text: "🔄 Rebooting *{{ inventory_hostname }}* ({{ ansible_host }})..."
-      changed_when: false
-      ignore_errors: true
-    - block:
-        - name: Attempt normal reboot
-          become: true
-          reboot:
-            reboot_timeout: 120
-            test_command: "uptime"
-          register: reboot_result
-          ignore_errors: true
-        - name: Fallback reboot command (if normal fails)
-          when: reboot_result is failed
-          shell: "nohup /usr/bin/sudo /sbin/shutdown -r now >/dev/null 2>&1 &"
-          async: 1
-          poll: 0
-          ignore_errors: true
-        - name: Wait 2 seconds before checking
-          pause:
-            seconds: 2
-        - name: Wait for host to come back
-          wait_for_connection:
-            delay: 2
-            timeout: 90
-          register: back_up
-          ignore_errors: true
-      always:
-        - name: Determine reboot success
-          set_fact:
-            reboot_success: >-
-              {{ (reboot_result is defined and reboot_result is succeeded)
-              or (back_up is defined and back_up is succeeded) }}
-        - name: Record reboot result
-          set_fact:
-            reboot_results_all: "{{ reboot_results_all | default({}) | combine({inventory_hostname: reboot_success}) }}"
-        - name: Notify Slack of result
-          when: slack_webhook_url | length > 0
-          uri:
-            url: "{{ slack_webhook_url }}"
-            method: POST
-            headers:
-              Content-Type: "application/json"
-            body_format: json
-            body: >-
-              {% if reboot_success %}
-              {"text":"✅ *{{ inventory_hostname }}* rebooted successfully."}
-              {% else %}
-              {"text":"⚠️ *{{ inventory_hostname }}* reboot failed or unresponsive."}
-              {% endif %}
-          changed_when: false
-          ignore_errors: true
-        - name: Pause before next droplet
-          pause:
-            seconds: 2
----
-# 3️⃣ Slack summary
-- name: Summarize reboot results
-  hosts: localhost
-  gather_facts: no
-  vars:
-    slack_webhook_url: "{{ SLACK_WEBHOOK_URL | default('') }}"
-    end_time: "{{ lookup('pipe', 'date +%s') }}"
-  tasks:
-    - name: Compute total time
-      set_fact:
-        elapsed_seconds: "{{ end_time | int - start_time | int }}"
-    - name: Build Slack summary
-      set_fact:
-        summary_msg: |
-          {% set total = reboot_results_all | length %}
-          {% set ok = reboot_results_all | dict2items | selectattr('value','equalto',true) | list | length %}
-          {% set failed = total - ok %}
-          ✅ *{{ ok }}/{{ total }}* droplets rebooted successfully.
-          {% if failed > 0 %}
-          ❌ *{{ failed }}* failed: {{ reboot_results_all | dict2items | selectattr('value','equalto',false) | map(attribute='key') | join(', ') }}
-          {% endif %}
-          ⏱️ Total time: {{ elapsed_seconds }} sec
-    - name: Send summary to Slack
-      when: slack_webhook_url | length > 0
-      uri:
-        url: "{{ slack_webhook_url }}"
-        method: POST
-        headers:
-          Content-Type: "application/json"
-        body_format: json
-        body:
-          text: "{{ summary_msg }}"
-      changed_when: false
-      ignore_errors: true
+
+    - name: Reboot droplets sequentially
+      include_tasks: _reboot_droplet.yml
+      loop: "{{ droplet_ips | dict2items }}"
+      loop_control:
+        loop_var: current
+      vars:
+        droplet_name: "{{ current.key }}"
+        droplet_ip: "{{ current.value }}"
+        slack_webhook_url: "{{ slack_webhook_url }}"
+        start_time: "{{ start_time }}"
