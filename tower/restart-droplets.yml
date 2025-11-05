@@ -1,5 +1,5 @@
 ---
-# 1️⃣ Primer play: construir el grupo dinámico
+# 1️⃣ Build transient group for selected droplets
 - name: Build transient group with selected droplets
   hosts: localhost
   gather_facts: no
@@ -8,6 +8,7 @@
     selected_droplets: "{{ droplet_names | default([]) }}"
     slack_webhook_url: "{{ SLACK_WEBHOOK_URL | default('') }}"
     start_time: "{{ lookup('pipe', 'date +%s') }}"
+
     droplet_map:
       production-lb01: 165.227.210.87
       production-lb02: 159.203.94.161
@@ -48,7 +49,7 @@
         groups: reboot_batch
       loop: "{{ droplet_ips | dict2items }}"
 
-    - name: Notify global start on Slack
+    - name: Notify start on Slack
       when: slack_webhook_url | length > 0
       uri:
         url: "{{ slack_webhook_url }}"
@@ -63,11 +64,12 @@
 
 
 ---
-# 2️⃣ Segundo play: reinicio secuencial real (uno por uno)
+# 2️⃣ Sequential reboot process
 - name: Sequentially reboot selected droplets
   hosts: reboot_batch
   gather_facts: false
   serial: 1
+
   vars:
     slack_webhook_url: "{{ SLACK_WEBHOOK_URL | default('') }}"
 
@@ -77,7 +79,8 @@
       uri:
         url: "{{ slack_webhook_url }}"
         method: POST
-        headers: { Content-Type: "application/json" }
+        headers:
+          Content-Type: "application/json"
         body_format: json
         body:
           text: "🔄 Rebooting *{{ inventory_hostname }}* ({{ ansible_host }})..."
@@ -85,7 +88,7 @@
       ignore_errors: true
 
     - block:
-        - name: Try normal Ansible reboot
+        - name: Attempt normal reboot
           become: true
           reboot:
             reboot_timeout: 120
@@ -93,7 +96,7 @@
           register: reboot_result
           ignore_errors: true
 
-        - name: Fallback reboot (for low disk or hung systems)
+        - name: Fallback reboot command (if normal fails)
           when: reboot_result is failed
           shell: "nohup /usr/bin/sudo /sbin/shutdown -r now >/dev/null 2>&1 &"
           async: 1
@@ -104,7 +107,7 @@
           pause:
             seconds: 2
 
-        - name: Wait for droplet to come back online
+        - name: Wait for host to come back
           wait_for_connection:
             delay: 2
             timeout: 90
@@ -118,7 +121,7 @@
               {{ (reboot_result is defined and reboot_result is succeeded)
               or (back_up is defined and back_up is succeeded) }}
 
-        - name: Record droplet result
+        - name: Record reboot result
           set_fact:
             reboot_results_all: "{{ reboot_results_all | default({}) | combine({inventory_hostname: reboot_success}) }}"
 
@@ -127,7 +130,8 @@
           uri:
             url: "{{ slack_webhook_url }}"
             method: POST
-            headers: { Content-Type: "application/json" }
+            headers:
+              Content-Type: "application/json"
             body_format: json
             body: >-
               {% if reboot_success %}
@@ -144,18 +148,19 @@
 
 
 ---
-# 3️⃣ Tercer play: resumen general en Slack
+# 3️⃣ Slack summary
 - name: Summarize reboot results
   hosts: localhost
   gather_facts: no
+
   vars:
     slack_webhook_url: "{{ SLACK_WEBHOOK_URL | default('') }}"
     end_time: "{{ lookup('pipe', 'date +%s') }}"
+
   tasks:
     - name: Compute total time
       set_fact:
         elapsed_seconds: "{{ end_time | int - start_time | int }}"
-        elapsed_minutes: "{{ (end_time | int - start_time | int) // 60 }}"
 
     - name: Build Slack summary
       set_fact:
@@ -174,7 +179,8 @@
       uri:
         url: "{{ slack_webhook_url }}"
         method: POST
-        headers: { Content-Type: "application/json" }
+        headers:
+          Content-Type: "application/json"
         body_format: json
         body:
           text: "{{ summary_msg }}"
