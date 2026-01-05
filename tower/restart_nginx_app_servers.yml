@@ -1,0 +1,37 @@
+---
+- name: Restart NGINX on production app servers
+  hosts: app_servers
+  become: yes
+  serial: 1   # Ejecuta los hosts uno por uno (cero impacto)
+
+  vars:
+    slack_webhook_url: "{{ lookup('env', 'SLACK_WEBHOOK_URL') | default('', true) }}"
+    slack_channel: "#ops-alerts"
+    environment_name: "Production"
+    play_name: "Restart NGINX on App Servers"
+
+  pre_tasks:
+    - name: Notify Slack - starting restart
+      uri:
+        url: "{{ slack_webhook_url }}"
+        method: POST
+        body_format: json
+        body:
+          text: ":information_source: *{{ play_name }}* started on *{{ environment_name }}*.\nTarget group: *app_servers* (serial:1)"
+      when: slack_webhook_url != ""
+
+  tasks:
+    - name: Restart nginx service
+      ansible.builtin.service:
+        name: nginx
+        state: restarted
+
+  post_tasks:
+    - name: Notify Slack - restart completed
+      uri:
+        url: "{{ slack_webhook_url }}"
+        method: POST
+        body_format: json
+        body:
+          text: ":white_check_mark: *{{ play_name }}* successfully completed on *{{ environment_name }}*."
+      when: slack_webhook_url != ""
