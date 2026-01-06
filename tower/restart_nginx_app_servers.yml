@@ -1,27 +1,29 @@
 ---
-# Play 1: preparar lote y avisar inicio
-- name: Prepare list of app servers and announce start
+# Play 1: Build nginx host list and announce start
+- name: Build nginx batch and announce start
   hosts: localhost
   gather_facts: no
 
   vars:
     slack_webhook_url: "{{ SLACK_WEBHOOK_URL | default('') }}"
     start_epoch: "{{ lookup('pipe', 'date +%s') }}"
+
     app_servers:
-      - production-lb01
-      - production-lb02
-      - production-lb03
-      - production-lb04
+      production-lb01: 165.227.210.87
+      production-lb02: 159.203.94.161
+      production-lb03: 134.209.34.218
+      production-lb04: 134.209.34.40
 
   tasks:
 
-    - name: Create transient group 'nginx_batch'
+    - name: Create transient group nginx_batch
       add_host:
-        name: "{{ item }}"
+        name: "{{ item.key }}"
+        ansible_host: "{{ item.value }}"
         groups: nginx_batch
-      loop: "{{ app_servers }}"
+      loop: "{{ app_servers | dict2items }}"
 
-    - name: Notify start on Slack (once)
+    - name: Notify start on Slack
       when: slack_webhook_url | length > 0
       uri:
         url: "{{ slack_webhook_url }}"
@@ -30,18 +32,17 @@
           Content-Type: "application/json"
         body_format: json
         body:
-          text: "⚙️ Starting sequential *NGINX restart* on: {{ app_servers | join(', ') }}"
+          text: "⚙️ Starting sequential *NGINX restart* on: {{ app_servers.keys() | join(', ') }}"
       changed_when: false
       ignore_errors: true
 
-    - name: Share facts for other plays
+    - name: Share values for other plays
       set_stats:
         data:
-          nginx_hosts: "{{ app_servers }}"
           nginx_start_epoch: "{{ start_epoch }}"
           slack_url_shared: "{{ slack_webhook_url }}"
 
-# Play 2 — reiniciar nginx uno por uno
+# Play 2 — restart sequentially
 - name: Restart nginx sequentially
   hosts: nginx_batch
   gather_facts: false
@@ -62,11 +63,11 @@
           Content-Type: "application/json"
         body_format: json
         body:
-          text: "🔄 Restarting nginx on *{{ inventory_hostname }}*..."
+          text: "🔄 Restarting nginx on *{{ inventory_hostname }}* ({{ ansible_host }})..."
       changed_when: false
       ignore_errors: true
 
-    - name: Restart nginx
+    - name: Restart nginx service
       ansible.builtin.systemd:
         name: nginx
         state: restarted
@@ -77,7 +78,7 @@
     - pause:
         seconds: 2
 
-    - name: Report nginx result to Slack
+    - name: Notify Slack after restart
       when: slack_webhook_url | length > 0
       uri:
         url: "{{ slack_webhook_url }}"
@@ -94,8 +95,8 @@
       changed_when: false
       ignore_errors: true
 
-# Play 3 — resumen final
-- name: Final Slack summary
+# Play 3 — final message
+- name: Final Slack message
   hosts: localhost
   gather_facts: no
 
@@ -113,6 +114,6 @@
           Content-Type: "application/json"
         body_format: json
         body:
-          text: "🎯 Finished NGINX restart batch on production app servers."
+          text: "🎯 Finished NGINX restart batch."
       changed_when: false
       ignore_errors: true
