@@ -1,46 +1,118 @@
 ---
-- name: Restart Nginx on production app servers (one by one)
-  hosts: app_servers
-  serial: 1
-  gather_facts: false
-  become: yes
+# Play 1: preparar lote y avisar inicio
+- name: Prepare list of app servers and announce start
+  hosts: localhost
+  gather_facts: no
+
+  vars:
+    slack_webhook_url: "{{ SLACK_WEBHOOK_URL | default('') }}"
+    start_epoch: "{{ lookup('pipe', 'date +%s') }}"
+    app_servers:
+      - production-lb01
+      - production-lb02
+      - production-lb03
+      - production-lb04
 
   tasks:
 
-    - block:
+    - name: Create transient group 'nginx_batch'
+      add_host:
+        name: "{{ item }}"
+        groups: nginx_batch
+      loop: "{{ app_servers }}"
 
-        - name: Restart nginx service
-          ansible.builtin.systemd:
-            name: nginx
-            state: restarted
-            daemon_reload: yes
+    - name: Notify start on Slack (once)
+      when: slack_webhook_url | length > 0
+      uri:
+        url: "{{ slack_webhook_url }}"
+        method: POST
+        headers:
+          Content-Type: "application/json"
+        body_format: json
+        body:
+          text: "⚙️ Starting sequential *NGINX restart* on: {{ app_servers | join(', ') }}"
+      changed_when: false
+      ignore_errors: true
 
-        - name: Notify Slack (success)
-          ansible.builtin.uri:
-            url: "{{ cloud_slack_webhook_url }}"
-            method: POST
-            body_format: json
-            body:
-              text: |
-                ✅ *Nginx restarted successfully*
-                Server: `{{ inventory_hostname }}`
-                Environment: `production`
-            status_code: [200, 204]
+    - name: Share facts for other plays
+      set_stats:
+        data:
+          nginx_hosts: "{{ app_servers }}"
+          nginx_start_epoch: "{{ start_epoch }}"
+          slack_url_shared: "{{ slack_webhook_url }}"
 
-      rescue:
+# Play 2 — reiniciar nginx uno por uno
+- name: Restart nginx sequentially
+  hosts: nginx_batch
+  gather_facts: false
+  serial: 1
+  become: yes
 
-        - name: Notify Slack (failure)
-          ansible.builtin.uri:
-            url: "{{ cloud_slack_webhook_url }}"
-            method: POST
-            body_format: json
-            body:
-              text: |
-                ❌ *FAILED restarting Nginx*
-                Server: `{{ inventory_hostname }}`
-                Environment: `production`
-            status_code: [200, 204]
+  vars:
+    slack_webhook_url: "{{ hostvars['localhost']['slack_url_shared'] | default('') }}"
 
-        - name: Fail the play explicitly
-          ansible.builtin.fail:
-            msg: "Nginx restart failed on {{ inventory_hostname }}"
+  tasks:
+
+    - name: Notify Slack before restart
+      when: slack_webhook_url | length > 0
+      uri:
+        url: "{{ slack_webhook_url }}"
+        method: POST
+        headers:
+          Content-Type: "application/json"
+        body_format: json
+        body:
+          text: "🔄 Restarting nginx on *{{ inventory_hostname }}*..."
+      changed_when: false
+      ignore_errors: true
+
+    - name: Restart nginx
+      ansible.builtin.systemd:
+        name: nginx
+        state: restarted
+        daemon_reload: yes
+      register: nginx_result
+      ignore_errors: true
+
+    - pause:
+        seconds: 2
+
+    - name: Report nginx result to Slack
+      when: slack_webhook_url | length > 0
+      uri:
+        url: "{{ slack_webhook_url }}"
+        method: POST
+        headers:
+          Content-Type: "application/json"
+        body_format: json
+        body: >-
+          {% if nginx_result is succeeded %}
+          {"text":"✅ NGINX restarted successfully on *{{ inventory_hostname }}*"}
+          {% else %}
+          {"text":"❌ NGINX restart FAILED on *{{ inventory_hostname }}*"}
+          {% endif %}
+      changed_when: false
+      ignore_errors: true
+
+# Play 3 — resumen final
+- name: Final Slack summary
+  hosts: localhost
+  gather_facts: no
+
+  vars:
+    slack_webhook_url: "{{ hostvars['localhost']['slack_url_shared'] | default('') }}"
+
+  tasks:
+
+    - name: Notify completion
+      when: slack_webhook_url | length > 0
+      uri:
+        url: "{{ slack_webhook_url }}"
+        method: POST
+        headers:
+          Content-Type: "application/json"
+        body_format: json
+        body:
+          text: "🎯 Finished NGINX restart batch on production app servers."
+      changed_when: false
+      ignore_errors: true
