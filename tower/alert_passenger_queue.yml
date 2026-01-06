@@ -1,14 +1,15 @@
 ---
 - name: Monitor Passenger queue and alert if high
-  hosts: production-lb03
+  hosts: 134.209.34.218
   become: yes
   gather_facts: yes
 
   vars:
     queue_threshold: 10
+    # Igual que en el play de reboot droplets
     slack_webhook_url: "{{ SLACK_WEBHOOK_URL | default('') }}"
-    monitor_start: 11
-    monitor_end: 16
+    monitor_start: 11   # 11:00
+    monitor_end: 16     # 16:00
 
   tasks:
 
@@ -16,49 +17,44 @@
       debug:
         msg: "Server hour is {{ ansible_date_time.hour }}"
 
-    - name: Skip outside monitoring window
-      when: ansible_date_time.hour | int < monitor_start or
-            ansible_date_time.hour | int >= monitor_end
+    - block:
+        - name: Read Passenger queue
+          shell: |
+            passenger-status | awk '/Requests in top-level queue/ {print $6}'
+          register: queue_raw
+          changed_when: false
+
+        - name: Parse queue value
+          set_fact:
+            queue_size: "{{ queue_raw.stdout | int }}"
+
+        - name: Debug queue value
+          debug:
+            msg: "👉 Passenger queue on {{ inventory_hostname }} = {{ queue_size }}"
+
+        - name: Send Slack alert if queue is high
+          when:
+            - queue_size > queue_threshold
+            - slack_webhook_url | length > 0
+          uri:
+            url: "{{ slack_webhook_url }}"
+            method: POST
+            headers:
+              Content-Type: "application/json"
+            body_format: json
+            body:
+              text: >-
+                🚨 *Passenger queue alert*\n
+                Host: {{ inventory_hostname }}\n
+                Queue: {{ queue_size }} (threshold {{ queue_threshold }})\n
+                Time: {{ ansible_date_time.time }}
+      when: >
+        (ansible_date_time.hour | int) >= monitor_start and
+        (ansible_date_time.hour | int) <  monitor_end
+
+    - name: Outside monitoring window message
+      when: >
+        (ansible_date_time.hour | int) < monitor_start or
+        (ansible_date_time.hour | int) >= monitor_end
       debug:
         msg: "⏸ Outside monitoring window — nothing to do."
-      tags: always
-
-    - name: Read Passenger queue (only during window)
-      when: ansible_date_time.hour | int >= monitor_start and
-            ansible_date_time.hour | int < monitor_end
-      shell: |
-        passenger-status | awk '/Requests in top-level queue/ {print $6}'
-      register: queue_raw
-      changed_when: false
-
-    - name: Parse queue value
-      when: queue_raw is defined
-      set_fact:
-        queue_size: "{{ queue_raw.stdout | int }}"
-
-    - name: Debug queue value (explicit)
-      when: queue_size is defined
-      debug:
-        msg: "👉 Passenger queue on {{ inventory_hostname }} = {{ queue_size }}"
-
-    - name: Send Slack alert if queue is high
-      when:
-        - queue_size is defined
-        - queue_size > queue_threshold
-        - slack_webhook_url | length > 0
-      uri:
-        url: "{{ slack_webhook_url }}"
-        method: POST
-        headers:
-          Content-Type: "application/json"
-        body_format: json
-        body:
-          text: >-
-            🚨 *Passenger queue alert*\n
-            Host: {{ inventory_hostname }}\n
-            Queue: {{ queue_size }} (threshold {{ queue_threshold }})\n
-            Time: {{ ansible_date_time.time }}
-      changed_when: false
-      ignore_errors: true
-      changed_when: false
-      ignore_errors: true
