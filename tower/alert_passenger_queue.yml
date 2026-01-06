@@ -1,6 +1,6 @@
 ---
 - name: Monitor Passenger queue and alert if high
-  hosts: production-lb03
+  hosts: 134.209.34.218
   gather_facts: yes
   become: yes
 
@@ -20,13 +20,13 @@
 
     - name: Parse queue value (cast to INT)
       set_fact:
-        queue_size: "{{ (queue_raw.stdout | regex_search('Requests in top-level queue\\s*:\\s*(\\d+)', '\\1')) | int }}"
+        queue_size: "{{ (queue_raw.stdout | regex_search('Requests in top-level queue\\s*:\\s*(\\d+)','\\1')) | int }}"
 
     - name: Debug queue value
       debug:
-        msg: "👉 Passenger queue on {{ inventory_hostname }} = {{ queue_size }}"
+        msg: "👉 Passenger queue = {{ queue_size }}"
 
-    - name: Send Slack alert if queue is high
+    - name: Send Slack alert if queue high
       when: queue_size > queue_threshold
       uri:
         url: "{{ slack_webhook_url }}"
@@ -38,6 +38,6 @@
           text: |
             🚨 *Passenger queue alert*
             Host: {{ inventory_hostname }}
-            Queue: {{ queue_size }}  (threshold: {{ queue_threshold }})
+            Queue: {{ queue_size }} (threshold {{ queue_threshold }})
       changed_when: false
       ignore_errors: true
