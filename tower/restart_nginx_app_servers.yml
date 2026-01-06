@@ -1,8 +1,9 @@
 ---
-# Play 1: Build nginx host list and announce start
+# Play 1: Build nginx batch and announce start
 - name: Build nginx batch and announce start
   hosts: localhost
   gather_facts: no
+  become: false          # 🚀 evitar sudo en localhost
 
   vars:
     slack_webhook_url: "{{ SLACK_WEBHOOK_URL | default('') }}"
@@ -67,7 +68,7 @@
       changed_when: false
       ignore_errors: true
 
-    - name: Restart nginx service
+    - name: Restart nginx
       ansible.builtin.systemd:
         name: nginx
         state: restarted
@@ -88,17 +89,18 @@
         body_format: json
         body: >-
           {% if nginx_result is succeeded %}
-          {"text":"✅ NGINX restarted successfully on *{{ inventory_hostname }}*"}
+          {"text":"✅ NGINX restarted on *{{ inventory_hostname }}*"}
           {% else %}
           {"text":"❌ NGINX restart FAILED on *{{ inventory_hostname }}*"}
           {% endif %}
       changed_when: false
       ignore_errors: true
 
-# Play 3 — final message
+# Play 3 — final summary
 - name: Final Slack message
   hosts: localhost
   gather_facts: no
+  become: false
 
   vars:
     slack_webhook_url: "{{ hostvars['localhost']['slack_url_shared'] | default('') }}"
