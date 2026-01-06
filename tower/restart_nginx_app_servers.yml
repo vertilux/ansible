@@ -5,9 +5,6 @@
   gather_facts: false
   become: yes
 
-  vars:
-    slack_webhook_url: "{{ lookup('env', 'SLACK_WEBHOOK_URL') | default(slack_webhook_url, true) }}"
-
   tasks:
 
     - block:
@@ -20,7 +17,7 @@
 
         - name: Notify Slack (success)
           ansible.builtin.uri:
-            url: "{{ slack_webhook_url }}"
+            url: "{{ cloud_slack_webhook_url }}"
             method: POST
             body_format: json
             body:
@@ -34,7 +31,7 @@
 
         - name: Notify Slack (failure)
           ansible.builtin.uri:
-            url: "{{ slack_webhook_url }}"
+            url: "{{ cloud_slack_webhook_url }}"
             method: POST
             body_format: json
             body:
