@@ -5,6 +5,9 @@
   gather_facts: false
   become: yes
 
+  vars:
+    slack_webhook_url: "{{ lookup('env', 'SLACK_WEBHOOK_URL') | default(slack_webhook_url, true) }}"
+
   tasks:
 
     - block:
