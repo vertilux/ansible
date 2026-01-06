@@ -1,15 +1,14 @@
 ---
 - name: Monitor Passenger queue and alert if high
-  hosts: app_servers
-  gather_facts: yes
+  hosts: production-lb03
   become: yes
-  serial: 1
+  gather_facts: yes
 
   vars:
-    slack_webhook_url: "{{ hostvars['localhost']['slack_url_shared'] | default(lookup('env','SLACK_WEBHOOK_URL') | default('', true)) }}"
     queue_threshold: 10
-    start_hour: 11
-    end_hour: 16
+    slack_webhook_url: "{{ SLACK_WEBHOOK_URL | default('') }}"
+    monitor_start: 11
+    monitor_end: 16
 
   tasks:
 
@@ -18,33 +17,35 @@
         msg: "Server hour is {{ ansible_date_time.hour }}"
 
     - name: Skip outside monitoring window
-      when: (ansible_date_time.hour | int) < start_hour
-            or (ansible_date_time.hour | int) >= end_hour
+      when: ansible_date_time.hour | int < monitor_start or
+            ansible_date_time.hour | int >= monitor_end
       debug:
-        msg: "⏸️ Outside monitoring window ({{ start_hour }}–{{ end_hour }}). Skipping."
-      changed_when: false
+        msg: "⏸ Outside monitoring window — nothing to do."
+      tags: always
 
     - name: Read Passenger queue (only during window)
-      when: (ansible_date_time.hour | int) >= start_hour
-            and (ansible_date_time.hour | int) < end_hour
-      command: passenger-status --show=xml
-      register: passenger_xml
+      when: ansible_date_time.hour | int >= monitor_start and
+            ansible_date_time.hour | int < monitor_end
+      shell: |
+        passenger-status | awk '/Requests in top-level queue/ {print $6}'
+      register: queue_raw
       changed_when: false
 
     - name: Parse queue value
-      when: passenger_xml.stdout is defined
+      when: queue_raw is defined
       set_fact:
-        queue_size: "{{ (passenger_xml.stdout | regex_search('<get_wait_list_size>([0-9]+)</get_wait_list_size>', '\\1')) | first | int }}"
+        queue_size: "{{ queue_raw.stdout | int }}"
 
-    - name: Debug queue value
+    - name: Debug queue value (explicit)
+      when: queue_size is defined
       debug:
-        msg: "Queue on {{ inventory_hostname }} = {{ queue_size | default('unknown') }}"
+        msg: "👉 Passenger queue on {{ inventory_hostname }} = {{ queue_size }}"
 
-    - name: Send Slack alert if queue high
+    - name: Send Slack alert if queue is high
       when:
-        - slack_webhook_url | length > 0
         - queue_size is defined
-        - queue_size | int > queue_threshold
+        - queue_size > queue_threshold
+        - slack_webhook_url | length > 0
       uri:
         url: "{{ slack_webhook_url }}"
         method: POST
@@ -54,8 +55,10 @@
         body:
           text: >-
             🚨 *Passenger queue alert*\n
-            Host: `{{ inventory_hostname }}`\n
-            Queue: *{{ queue_size }}* (threshold {{ queue_threshold }})\n
+            Host: {{ inventory_hostname }}\n
+            Queue: {{ queue_size }} (threshold {{ queue_threshold }})\n
             Time: {{ ansible_date_time.time }}
+      changed_when: false
+      ignore_errors: true
       changed_when: false
       ignore_errors: true
