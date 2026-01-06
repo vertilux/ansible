@@ -1,0 +1,43 @@
+---
+- name: Alert if Passenger queue exceeds threshold
+  hosts: app_servers
+  gather_facts: false
+  become: yes
+  serial: 1
+
+  vars:
+    queue_threshold: 10
+    slack_webhook_url: "{{ SLACK_WEBHOOK_URL | default('') }}"
+
+  tasks:
+    - name: Get passenger status (XML)
+      command: passenger-status --show=xml
+      register: passenger_xml
+      changed: false
+
+    - name: Extract queue count
+      set_fact:
+        queue_count: >-
+          {{ passenger_xml.stdout | regex_search('<requests_in_queue>([0-9]+)</requests_in_queue>', '\\1') | first | int }}
+
+    - name: Show queue value
+      debug:
+        msg: "Host {{ inventory_hostname }} → queue = {{ queue_count }}"
+
+    - name: Notify Slack when queue high
+      when:
+        - slack_webhook_url | length > 0
+        - queue_count > queue_threshold
+      uri:
+        url: "{{ slack_webhook_url }}"
+        method: POST
+        headers:
+          Content-Type: application/json
+        body_format: json
+        body:
+          text: |
+            ⚠️ *High queue detected on {{ inventory_hostname }}*
+            Current queue: {{ queue_count }}
+            Threshold: {{ queue_threshold }}
+      changed_when: false
+      ignore_errors: true
