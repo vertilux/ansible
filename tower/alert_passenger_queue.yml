@@ -1,43 +1,64 @@
 ---
-- name: Alert if Passenger queue exceeds threshold
+- name: Monitor Passenger queue and alert if high
   hosts: app_servers
-  gather_facts: false
+  gather_facts: yes
   become: yes
   serial: 1
 
   vars:
+    # Slack URL (misma lógica que el playbook de reboot droplets)
+    slack_webhook_url: "{{ hostvars['localhost']['slack_url_shared'] | default(lookup('env','SLACK_WEBHOOK_URL') | default('', true)) }}"
     queue_threshold: 10
-    slack_webhook_url: "{{ SLACK_WEBHOOK_URL | default('') }}"
+    start_hour: 11         # 11:00 AM
+    end_hour: 16           # 4:00 PM
 
   tasks:
-    - name: Get passenger status (XML)
+
+    - name: Get current hour on server
+    - debug:
+        msg: "Server hour is {{ ansible_date_time.hour }}"
+
+    - name: Skip outside monitoring window
+      when: (ansible_date_time.hour | int) < start_hour
+            or (ansible_date_time.hour | int) >= end_hour
+      debug:
+        msg: "⏸️ Outside monitoring window ({{ start_hour }}–{{ end_hour }}). Skipping."
+      changed_when: false
+      tags: skip_outside
+      run_once: false
+
+    - name: Read Passenger queue size
+      when: (ansible_date_time.hour | int) >= start_hour
+            and (ansible_date_time.hour | int) < end_hour
       command: passenger-status --show=xml
       register: passenger_xml
-      changed: false
+      changed_when: false
 
-    - name: Extract queue count
+    - name: Parse queue value
+      when: passenger_xml.stdout is defined
       set_fact:
-        queue_count: >-
-          {{ passenger_xml.stdout | regex_search('<requests_in_queue>([0-9]+)</requests_in_queue>', '\\1') | first | int }}
+        queue_size: "{{ (passenger_xml.stdout | regex_search('<get_wait_list_size>([0-9]+)</get_wait_list_size>', '\\1')) | first | int }}"
 
-    - name: Show queue value
+    - name: Debug queue
       debug:
-        msg: "Host {{ inventory_hostname }} → queue = {{ queue_count }}"
+        msg: "Queue on {{ inventory_hostname }} = {{ queue_size | default('unknown') }}"
 
-    - name: Notify Slack when queue high
+    - name: Send Slack alert if queue high
       when:
         - slack_webhook_url | length > 0
-        - queue_count > queue_threshold
+        - queue_size is defined
+        - queue_size | int > queue_threshold
       uri:
         url: "{{ slack_webhook_url }}"
         method: POST
         headers:
-          Content-Type: application/json
+          Content-Type: "application/json"
         body_format: json
         body:
-          text: |
-            ⚠️ *High queue detected on {{ inventory_hostname }}*
-            Current queue: {{ queue_count }}
-            Threshold: {{ queue_threshold }}
+          text: >-
+            🚨 *Passenger queue alert*  
+            Host: `{{ inventory_hostname }}`  
+            Queue: *{{ queue_size }}* (threshold {{ queue_threshold }})  
+            Time: {{ ansible_date_time.time }}
       changed_when: false
       ignore_errors: true
