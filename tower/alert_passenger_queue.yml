@@ -1,6 +1,7 @@
 ---
 - name: Monitor Passenger queue and alert if high
-  hosts: 134.209.34.218
+  hosts: app_servers
+  serial: 1
   gather_facts: yes
   become: yes
 
@@ -9,10 +10,6 @@
     slack_webhook_url: "{{ SLACK_WEBHOOK_URL | default('') }}"
 
   tasks:
-
-    - name: Show server current hour
-      debug:
-        msg: "Server hour is {{ ansible_date_time.hour }}"
 
     - name: Read Passenger queue
       command: passenger-status
@@ -26,7 +23,7 @@
 
     - name: Debug queue value
       debug:
-        msg: "👉 Passenger queue = {{ queue_size }}"
+        msg: "👉 Passenger queue on {{ inventory_hostname }} = {{ queue_size }}"
 
     - name: Send Slack alert if queue high
       when: (queue_size | int) > (queue_threshold | int)
