@@ -1,26 +1,46 @@
 ---
 - name: Restart Nginx on production app servers (one by one)
   hosts: app_servers
-  become: yes
+  serial: 1
   gather_facts: false
-  serial: 1        # 👉 reinicia uno por uno
+  become: yes
 
   tasks:
 
-    - name: Restart nginx
-      ansible.builtin.systemd:
-        name: nginx
-        state: restarted
-        daemon_reload: yes
-      register: nginx_restart
+    - block:
 
-    - name: Send Slack notification
-      ansible.builtin.uri:
-        url: "{{ slack_webhook_url }}"
-        method: POST
-        body_format: json
-        body:
-          text: |
-            :arrows_counterclockwise: *Nginx restarted on* `{{ inventory_hostname }}`
-            Status: `{{ 'OK' if nginx_restart is succeeded else 'FAILED' }}`
-      when: slack_webhook_url is defined
+        - name: Restart nginx service
+          ansible.builtin.systemd:
+            name: nginx
+            state: restarted
+            daemon_reload: yes
+
+        - name: Notify Slack (success)
+          ansible.builtin.uri:
+            url: "{{ slack_webhook_url }}"
+            method: POST
+            body_format: json
+            body:
+              text: |
+                ✅ *Nginx restarted successfully*
+                Server: `{{ inventory_hostname }}`
+                Environment: `production`
+            status_code: [200, 204]
+
+      rescue:
+
+        - name: Notify Slack (failure)
+          ansible.builtin.uri:
+            url: "{{ slack_webhook_url }}"
+            method: POST
+            body_format: json
+            body:
+              text: |
+                ❌ *FAILED restarting Nginx*
+                Server: `{{ inventory_hostname }}`
+                Environment: `production`
+            status_code: [200, 204]
+
+        - name: Fail the play explicitly
+          ansible.builtin.fail:
+            msg: "Nginx restart failed on {{ inventory_hostname }}"
