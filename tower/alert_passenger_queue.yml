@@ -20,14 +20,16 @@
 
     - name: Parse queue value (cast to INT)
       set_fact:
-        queue_size: "{{ (queue_raw.stdout | regex_search('Requests in top-level queue\\s*:\\s*(\\d+)','\\1')) | int }}"
+        queue_size: "{{ queue_raw.stdout
+                        | regex_search('Requests in top-level queue\\s*:\\s*(\\d+)', '\\1')
+                        | int }}"
 
     - name: Debug queue value
       debug:
         msg: "👉 Passenger queue = {{ queue_size }}"
 
     - name: Send Slack alert if queue high
-      when: queue_size > queue_threshold
+      when: (queue_size | int) > (queue_threshold | int)
       uri:
         url: "{{ slack_webhook_url }}"
         method: POST
