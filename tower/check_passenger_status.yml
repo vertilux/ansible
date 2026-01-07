@@ -1,71 +1,58 @@
 ---
-- name: Full Passenger + server health snapshot
+- name: Monitor Passenger queue and send snapshot
   hosts: app_servers
-  gather_facts: false
+  serial: 1
+  gather_facts: yes
   become: yes
 
   vars:
+    queue_threshold: 10
     slack_webhook_url: "{{ SLACK_WEBHOOK_URL | default('') }}"
 
   tasks:
 
-    # -------------------- BASIC STATUS -------------------------
-    - name: Run passenger-status
+    # --- QUEUE ---
+    - name: Read Passenger queue
       command: passenger-status
-      register: passenger_text
-      changed_when: false
+      register: queue_raw
 
-    - name: Run passenger-memory-stats
+    - name: Parse queue value (cast to INT)
+      set_fact:
+        queue_size: "{{ queue_raw.stdout
+                        | regex_search('Requests in top-level queue\\s*:\\s*(\\d+)', '\\1')
+                        | int }}"
+
+    # --- EXTRA SNAPSHOT INFO ---
+    - name: Get passenger memory stats
       command: passenger-memory-stats
-      register: passenger_mem
-      changed_when: false
+      register: memstats_raw
+      changed: false
 
-    - name: Check system memory
+    - name: Get free memory
       command: free -h
-      register: mem_free
-      changed_when: false
+      register: free_raw
+      changed: false
 
-    - name: Check uptime & load
-      command: uptime
-      register: uptime_cmd
-      changed_when: false
-
-    - name: Count active connections
-      command: netstat -nat | grep ESTABLISHED | wc -l
-      register: conn_count
-      changed_when: false
-
-    # -------------------- KEY METRICS -------------------------
-    - name: Extract queue size
+    # --- BUILD SUMMARY ---
+    - name: Build Slack summary message
       set_fact:
-        status_queue: "{{ passenger_text.stdout
-                          | regex_search('Requests in top-level queue\\s*:\\s*(\\d+)', '\\1')
-                          | default('0') | int }}"
+        slack_message: |
+          🖥️ *Snapshot — {{ inventory_hostname }}*
+          • Queue: `{{ queue_size }}`
+          • Threshold: `{{ queue_threshold }}`
+          
+          *Memory (free -h)*:
+          ```
+          {{ free_raw.stdout }}
+          ```
 
-    - name: Extract total processes
-      set_fact:
-        status_procs: "{{ passenger_text.stdout
-                          | regex_search('Processes\\s*:\\s*(\\d+)', '\\1')
-                          | default('0') | int }}"
+          *Passenger memory stats*:
+          ```
+          {{ memstats_raw.stdout }}
+          ```
 
-    - name: Show snapshot in AWX output
-      debug:
-        msg: |
-          ========= SNAPSHOT {{ inventory_hostname }} =========
-          passenger-status:
-          {{ passenger_text.stdout }}
-
-          passenger-memory-stats:
-          {{ passenger_mem.stdout }}
-
-          free -h:
-          {{ mem_free.stdout }}
-
-          uptime:
-          {{ uptime_cmd.stdout }}
-
-    # -------------------- SLACK SNAPSHOT ----------------------
-    - name: Send Slack snapshot summary
+    # --- SEND ONLY SUMMARY ---
+    - name: Send Slack snapshot
       when: slack_webhook_url | length > 0
       uri:
         url: "{{ slack_webhook_url }}"
@@ -74,13 +61,6 @@
           Content-Type: "application/json"
         body_format: json
         body:
-          text: |
-            🩺 *Server snapshot — {{ inventory_hostname }}*
-            • Queue: {{ status_queue }}
-            • Processes: {{ status_procs }}
-            • Established connections: {{ conn_count.stdout }}
-            • Uptime / Load: `{{ uptime_cmd.stdout }}`
-
-            _Details (memory + full passenger output) are in the AWX job log._
+          text: "{{ slack_message }}"
       changed_when: false
       ignore_errors: true
