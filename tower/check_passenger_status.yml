@@ -13,9 +13,9 @@
 
     # ---- COLLECT RAW DATA ----
     - name: Run passenger-status
-    command: passenger-status
-    register: passenger_status
-    changed_when: false
+      command: passenger-status
+      register: passenger_status
+      changed_when: false
 
     - name: Run passenger-status (XML for parsing)
       command: passenger-status --show=xml
@@ -40,9 +40,14 @@
                              | default('0')
                              | int }}"
 
-    - name: Extract Available memory (GB/Mb exact line)
+    - name: Extract Available memory
       set_fact:
-        mem_available: "{{ mem.stdout_lines | select('search', 'Mem:') | list | first | split() | last }}"
+        mem_available: "{{ mem.stdout_lines
+                           | select('search', 'Mem:')
+                           | list
+                           | first
+                           | split()
+                           | last }}"
 
     - name: Extract Passenger total RSS
       set_fact:
