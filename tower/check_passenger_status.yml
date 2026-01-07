@@ -1,132 +1,87 @@
 ---
-- name: Check Passenger queue and memory
-  hosts:
-    - 134.209.34.218
-    - 159.203.94.161
-    - 134.209.34.40
-    - 165.227.210.87
-  become: true
+- name: Check Passenger workers and queue
+  hosts: app_servers
   gather_facts: false
+  become: yes
+  serial: 1
 
   vars:
     passenger_queue_threshold: 10
     slack_webhook_url: "{{ SLACK_WEBHOOK_URL | default('') }}"
 
   tasks:
-    # 1) STATUS DE PASSENGER (COLA)
-    - name: Get Passenger status (queue and requests)
-      command: passenger-status
-      register: passenger_status
+
+    # ---- COLLECT RAW DATA ----
+    - name: Run passenger-status
+    command: passenger-status
+    register: passenger_status
+    changed_when: false
+
+    - name: Run passenger-status (XML for parsing)
+      command: passenger-status --show=xml
+      register: passenger_xml
       changed_when: false
 
-    # 2) MEMORIA GENERAL DEL SISTEMA
-    - name: Get system memory (free -h)
-      command: free -h
-      register: mem
-      changed_when: false
-
-    # 3) MEMORIA DE PASSENGER
-    - name: Get passenger memory stats
+    - name: Run passenger-memory-stats
       command: passenger-memory-stats
       register: p_mem
       changed_when: false
 
-    # --- EXTRACCIÓN SEGURA (SIN REGEX_SEARCH) ---
-
-    # COLA: línea "Requests in queue: X"
-    - name: Extract queue line
-      set_fact:
-        passenger_queue_line: >-
-          {{ (passenger_status.stdout.split('\n')
-              | select('search', 'Requests in queue')
-              | list
-              | first
-              | default('', true)
-             ) }}
+    - name: Check free memory
+      command: free -h
+      register: mem
       changed_when: false
 
-    - name: Extract queue size
+    # ---- PARSE USEFUL VALUES ----
+    - name: Extract Passenger queue
       set_fact:
-        passenger_queue: >-
-          {{ passenger_queue_line.split(':')[-1] | trim | default('0', true) | int }}
-      changed_when: false
+        passenger_queue: "{{ passenger_status.stdout
+                             | regex_search('Requests in top-level queue\\s*:\\s*(\\d+)', '\\1')
+                             | default('0')
+                             | int }}"
 
-    # MEMORIA DISPONIBLE: línea "Mem: ..."
-    - name: Extract Mem line
+    - name: Extract Available memory (GB/Mb exact line)
       set_fact:
-        mem_line: >-
-          {{ (mem.stdout.split('\n')
-              | select('match', '^Mem:')
-              | list
-              | first
-              | default('', true)
-             ) }}
-      changed_when: false
+        mem_available: "{{ mem.stdout_lines | select('search', 'Mem:') | list | first | split() | last }}"
 
-    - name: Extract available memory (last column of Mem:)
+    - name: Extract Passenger total RSS
       set_fact:
-        mem_available: >-
-          {{ (mem_line.split() | last) | default('N/A', true) }}
-      changed_when: false
-
-    # PASSENGER TOTAL RSS: línea "### Total private dirty RSS: ..."
-    - name: Extract Passenger total RSS line
-      set_fact:
-        passenger_total_rss_line: >-
-          {{ (p_mem.stdout.split('\n')
-              | select('search', 'Total private dirty RSS')
-              | list
-              | first
-              | default('', true)
-             ) }}
-      changed_when: false
-
-    - name: Extract Passenger total RSS value
-      set_fact:
-        passenger_total_rss: >-
-          {{ passenger_total_rss_line.split(':')[-1] | trim | default('N/A', true) }}
-      changed_when: false
-
-    # PASSENGER PROCESSES: línea "### Processes: X"
-    - name: Extract Passenger processes line
-      set_fact:
-        passenger_processes_line: >-
-          {{ (p_mem.stdout.split('\n')
-              | select('match', '^### Processes:')
-              | list
-              | first
-              | default('', true)
-             ) }}
-      changed_when: false
+        passenger_total_rss: "{{ p_mem.stdout
+                                 | regex_search('Total private dirty RSS:\\s*([0-9\\.]+\\s*MB)', '\\1')
+                                 | default('0 MB') }}"
 
     - name: Extract Passenger processes count
       set_fact:
-        passenger_proc_count: >-
-          {{ passenger_processes_line.split(':')[-1] | trim | default('N/A', true) }}
-      changed_when: false
+        passenger_proc_count: "{{ p_mem.stdout
+                                  | regex_search('### Processes:\\s*(\\d+)', '\\1')
+                                  | default('0')
+                                  | int }}"
 
-    # --- ENVÍO A SLACK (MISMA BASE QUE YA ESTABA, SOLO AÑADIMOS RESUMEN) ---
-        - name: Send snapshot to Slack
+    # ---- SEND SNAPSHOT TO SLACK ----
+    - name: Send snapshot to Slack
+      when: slack_webhook_url | length > 0
       uri:
         url: "{{ slack_webhook_url }}"
         method: POST
+        headers:
+          Content-Type: "application/json"
         body_format: json
         body:
           text: |-
-            :desktop_computer: Snapshot — {{ inventory_hostname }}
+            :desktop_computer: *Snapshot — {{ inventory_hostname }}*
             • Queue: {{ passenger_queue }}
             • Threshold: {{ passenger_queue_threshold }}
 
-            Memory (free -h):
+            *Memory (free -h):*
             {{ mem.stdout }}
 
-            Passenger memory stats:
+            *Passenger memory stats:*
             {{ p_mem.stdout }}
 
-            Quick view:
-            - Available system memory: {{ mem_available }}
-            - Passenger total private dirty RSS: {{ passenger_total_rss }}
-            - Passenger processes inspected: {{ passenger_proc_count }}
-      when: slack_webhook_url | length > 0
-      changed_when: true
+            *Summary metrics*
+            • Available memory: {{ mem_available }}
+            • Passenger dirty RSS total: {{ passenger_total_rss }}
+            • Passenger processes: {{ passenger_proc_count }}
+
+      changed_when: false
       ignore_errors: true
