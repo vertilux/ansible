@@ -10,6 +10,7 @@
 
   vars:
     passenger_queue_threshold: 10
+    slack_webhook_url: "{{ SLACK_WEBHOOK_URL | default('') }}"
 
   tasks:
     # 1) STATUS DE PASSENGER (COLA)
@@ -105,7 +106,7 @@
       changed_when: false
 
     # --- ENVÍO A SLACK (MISMA BASE QUE YA ESTABA, SOLO AÑADIMOS RESUMEN) ---
-    - name: Send snapshot to Slack
+        - name: Send snapshot to Slack
       uri:
         url: "{{ slack_webhook_url }}"
         method: POST
@@ -126,5 +127,6 @@
             - Available system memory: {{ mem_available }}
             - Passenger total private dirty RSS: {{ passenger_total_rss }}
             - Passenger processes inspected: {{ passenger_proc_count }}
-      when: slack_webhook_url is defined
+      when: slack_webhook_url | length > 0
       changed_when: true
+      ignore_errors: true
