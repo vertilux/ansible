@@ -15,6 +15,7 @@
     - name: Read Passenger queue
       command: passenger-status
       register: queue_raw
+      changed_when: false
 
     - name: Parse queue value (cast to INT)
       set_fact:
@@ -26,12 +27,12 @@
     - name: Get passenger memory stats
       command: passenger-memory-stats
       register: memstats_raw
-      changed: false
+      changed_when: false
 
     - name: Get free memory
       command: free -h
       register: free_raw
-      changed: false
+      changed_when: false
 
     # --- BUILD SUMMARY ---
     - name: Build Slack summary message
@@ -40,7 +41,7 @@
           🖥️ *Snapshot — {{ inventory_hostname }}*
           • Queue: `{{ queue_size }}`
           • Threshold: `{{ queue_threshold }}`
-          
+
           *Memory (free -h)*:
           ```
           {{ free_raw.stdout }}
@@ -51,7 +52,7 @@
           {{ memstats_raw.stdout }}
           ```
 
-    # --- SEND ONLY SUMMARY ---
+    # --- SEND SUMMARY ---
     - name: Send Slack snapshot
       when: slack_webhook_url | length > 0
       uri:
