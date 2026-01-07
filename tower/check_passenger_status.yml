@@ -1,7 +1,6 @@
 ---
-- name: Monitor Passenger queue and send snapshot
+- name: Check Passenger workers and queue
   hosts: app_servers
-  serial: 1
   gather_facts: yes
   become: yes
 
@@ -11,11 +10,10 @@
 
   tasks:
 
-    # --- QUEUE ---
+    # --- QUEUE STATUS ---
     - name: Read Passenger queue
       command: passenger-status
       register: queue_raw
-      changed_when: false
 
     - name: Parse queue value (cast to INT)
       set_fact:
@@ -24,37 +22,29 @@
                         | int }}"
 
     # --- EXTRA SNAPSHOT INFO ---
+
+    - name: Get memory usage (free -h)
+      command: free -h
+      register: mem_info
+      changed_when: false
+
+    - name: Extract available memory (numeric GB/MB)
+      set_fact:
+        mem_available: "{{ mem_info.stdout
+                          | regex_search('Mem:\\s+\\S+\\s+\\S+\\s+\\S+\\s+\\S+\\s+\\S+\\s+(\\S+)', '\\1') }}"
+
     - name: Get passenger memory stats
       command: passenger-memory-stats
-      register: memstats_raw
+      register: p_mem
       changed_when: false
 
-    - name: Get free memory
-      command: free -h
-      register: free_raw
-      changed_when: false
-
-    # --- BUILD SUMMARY ---
-    - name: Build Slack summary message
+    - name: Extract total Passenger dirty RSS
       set_fact:
-        slack_message: |
-          🖥️ *Snapshot — {{ inventory_hostname }}*
-          • Queue: `{{ queue_size }}`
-          • Threshold: `{{ queue_threshold }}`
+        passenger_total_rss: "{{ p_mem.stdout
+                                 | regex_search('Total private dirty RSS:\\s*([0-9\\.]+\\s*[A-Z]+)', '\\1') }}"
 
-          *Memory (free -h)*:
-          ```
-          {{ free_raw.stdout }}
-          ```
-
-          *Passenger memory stats*:
-          ```
-          {{ memstats_raw.stdout }}
-          ```
-
-    # --- SEND SUMMARY ---
-    - name: Send Slack snapshot
-      when: slack_webhook_url | length > 0
+    # --- SEND SLACK SNAPSHOT ---
+    - name: Send Slack snapshot summary
       uri:
         url: "{{ slack_webhook_url }}"
         method: POST
@@ -62,6 +52,21 @@
           Content-Type: "application/json"
         body_format: json
         body:
-          text: "{{ slack_message }}"
+          text: |
+            :desktop_computer: *Snapshot — {{ inventory_hostname }}*
+            • Queue: {{ queue_size }}
+            • Threshold: {{ queue_threshold }}
+
+            *Memory (free -h):*
+            {{ mem_info.stdout }}
+
+            *Passenger memory stats (summary):*
+            Total Passenger RSS: {{ passenger_total_rss }}
+
+            *Quick view:*
+            - Available system memory: {{ mem_available }}
+            - Passenger total memory: {{ passenger_total_rss }}
+            - Processes inspected: {{ (p_mem.stdout | regex_search('Processes:\\s*(\\d+)', '\\1')) }}
+
       changed_when: false
       ignore_errors: true
