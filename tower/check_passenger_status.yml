@@ -49,16 +49,20 @@
                            | split()
                            | last }}"
 
+    # CAMBIO AQUI: Usamos regex_findall + last para obtener el bloque final (Passenger) y no el primero (Nginx)
     - name: Extract Passenger total RSS
       set_fact:
         passenger_total_rss: "{{ p_mem.stdout
-                                 | regex_search('Total private dirty RSS:\\s*([0-9\\.]+\\s*MB)', '\\1')
+                                 | regex_findall('Total private dirty RSS:\\s*([0-9\\.]+\\s*MB)')
+                                 | last
                                  | default('0 MB') }}"
 
+    # CAMBIO AQUI: Usamos regex_findall + last para obtener el conteo final (Passenger)
     - name: Extract Passenger processes count
       set_fact:
         passenger_proc_count: "{{ p_mem.stdout
-                                  | regex_search('### Processes:\\s*(\\d+)', '\\1')
+                                  | regex_findall('### Processes:\\s*(\\d+)')
+                                  | last
                                   | default('0')
                                   | int }}"
 
