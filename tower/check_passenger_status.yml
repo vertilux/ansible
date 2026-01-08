@@ -1,5 +1,5 @@
 ---
-- name: Check Passenger workers and queue
+- name: Check Passenger workers, queue, and system load
   hosts: app_servers
   gather_facts: false
   become: yes
@@ -32,6 +32,11 @@
       register: mem
       changed_when: false
 
+    - name: Check CPU Load (uptime)
+      command: uptime
+      register: cpu_load
+      changed_when: false
+
     # ---- PARSE USEFUL VALUES ----
     - name: Extract Passenger queue
       set_fact:
@@ -49,7 +54,8 @@
                            | split()
                            | last }}"
 
-    # CAMBIO AQUI: Usamos regex_findall + last para obtener el bloque final (Passenger) y no el primero (Nginx)
+    # FIX: Use regex_findall + last to target the final summary block (Passenger) 
+    # instead of the first block (Nginx)
     - name: Extract Passenger total RSS
       set_fact:
         passenger_total_rss: "{{ p_mem.stdout
@@ -57,7 +63,7 @@
                                  | last
                                  | default('0 MB') }}"
 
-    # CAMBIO AQUI: Usamos regex_findall + last para obtener el conteo final (Passenger)
+    # FIX: Use regex_findall + last to target the final summary count (Passenger)
     - name: Extract Passenger processes count
       set_fact:
         passenger_proc_count: "{{ p_mem.stdout
@@ -78,6 +84,7 @@
         body:
           text: |-
             :desktop_computer: *Snapshot — {{ inventory_hostname }}*
+            :chart_with_upwards_trend: *Load Average:* {{ cpu_load.stdout }}
             • Queue: {{ passenger_queue }}
             • Threshold: {{ passenger_queue_threshold }}
 
