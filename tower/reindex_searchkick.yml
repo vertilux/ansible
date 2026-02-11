@@ -7,39 +7,43 @@
   # Ejecuta solo en 1 servidor para no sobrecargar el cluster de Elastic
   run_once: true
 
-  vars:
-    # La variable 'tenant_code' viene del Survey de AWX (ej. pwcdat, accltd)
-    # Asumimos estructura estándar: /home/deploy/erp-CODIGO/current
-    app_base_path: "/home/deploy/erp-{{ tenant_code }}/current"
-
   tasks:
-    - name: "1. Validar variables y directorio"
+    # NUEVO: Validación explícita para evitar errores "undefined" oscuros
+    - name: "0. Validar recepción de variable del Survey"
+      fail:
+        msg: "ERROR CRÍTICO: La variable 'tenant_code' no está definida. Por favor asegúrate de crear y ACTIVAR (Switch ON) el SURVEY en el Template de AWX."
+      when: tenant_code is undefined
+
+    - name: "1. Calcular ruta dinámica"
+      set_fact:
+        app_base_path: "/home/deploy/erp-{{ tenant_code }}/current"
+
+    - name: "2. Validar que el directorio existe en el servidor"
       stat:
         path: "{{ app_base_path }}"
       register: dir_check
 
-    - name: "2. Detener si el directorio no existe"
+    - name: "3. Detener si el directorio no existe"
       fail:
         msg: "El directorio {{ app_base_path }} no existe. Verifique que el código '{{ tenant_code }}' sea correcto."
       when: not dir_check.stat.exists
 
-    - name: "3. Confirmar inicio de reindexación"
+    - name: "4. Confirmar inicio de reindexación"
       debug:
         msg: "Iniciando reindexación para la base de datos: {{ tenant_code }} en ruta {{ app_base_path }}"
 
-    # Usamos RAILS_ENV={{ tenant_code }} porque cada tenant es su propio entorno en database.yml
-    # Usamos searchkick:reindex:all para regenerar TODOS los índices (Productos, Ordenes, Clientes)
-    - name: "4. Ejecutar Reindexación (RAILS_ENV={{ tenant_code }})"
+    # Usamos RAILS_ENV={{ tenant_code }} dinámico
+    - name: "5. Ejecutar Reindexación (RAILS_ENV={{ tenant_code }})"
       shell: |
         export PATH="/home/deploy/.rbenv/bin:/home/deploy/.rbenv/shims:$PATH"
         eval "$(rbenv init -)"
         bundle exec rake RAILS_ENV={{ tenant_code }} searchkick:reindex:all
       args:
         chdir: "{{ app_base_path }}"
-      async: 1800 # 30 minutos de timeout por si la base es muy grande
+      async: 1800 # 30 minutos de timeout
       poll: 15
       register: reindex_output
 
-    - name: "5. Resultado Final"
+    - name: "6. Resultado Final"
       debug:
         var: reindex_output.stdout_lines
