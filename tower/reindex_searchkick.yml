@@ -4,60 +4,42 @@
   become: yes
   become_user: deploy
   gather_facts: yes
-  # IMPORTANTE: Ejecutamos solo en un servidor del grupo para no duplicar la carga en Elastic.
-  # El indice es compartido. Si se reindexa desde lb01, ya sirve para lb04.
-  run_once: true 
+  # Ejecuta solo en 1 servidor para no sobrecargar el cluster de Elastic
+  run_once: true
 
   vars:
-    # Mapeo de Selección Humana -> Nombre de Directorio Real
-    # La variable 'tenant_selection' vendrá del Survey de AWX
-    tenant_map:
-      "Miami (ACCLTD)"       : "erp-accltd"
-      "España (ESPDAT)"      : "erp-espdat"
-      "Mexico (MXPDAT)"      : "erp-mxpdat"
-      "Dominicana (RDMDAT)"  : "erp-rdmdat"
-      "Puerto Rico (PRNDAT)" : "erp-prndat"
-      "Colombia (COVDAT)"    : "erp-covdat"
-      "Panama WC (WCPDAT)"   : "erp-wcpdat"
-      "El Salvador (SALDAT)" : "erp-saldat"
-      "Panama Selca (PWCDAT)": "erp-pwcdat"
-      "Brasil (BZIDAT)"      : "erp-bzidat"
-      "Panama (PANDAT)"      : "erp-pandat"
+    # La variable 'tenant_code' viene del Survey de AWX (ej. pwcdat, accltd)
+    # Asumimos estructura estándar: /home/deploy/erp-CODIGO/current
+    app_base_path: "/home/deploy/erp-{{ tenant_code }}/current"
 
   tasks:
-    - name: "1. Calcular directorio objetivo"
-      set_fact:
-        app_dir: "/home/deploy/{{ tenant_map[tenant_selection] }}/current"
-        app_name: "{{ tenant_map[tenant_selection] }}"
-
-    - name: "2. Validar que el directorio existe en el servidor"
+    - name: "1. Validar variables y directorio"
       stat:
-        path: "{{ app_dir }}"
+        path: "{{ app_base_path }}"
       register: dir_check
 
-    - name: "3. Abortar si el directorio no existe (Seguridad)"
+    - name: "2. Detener si el directorio no existe"
       fail:
-        msg: "El directorio {{ app_dir }} no existe en este servidor. Verifique la selección."
+        msg: "El directorio {{ app_base_path }} no existe. Verifique que el código '{{ tenant_code }}' sea correcto."
       when: not dir_check.stat.exists
 
-    - name: "4. Inicio de Reindexación (Esto puede tardar)"
+    - name: "3. Confirmar inicio de reindexación"
       debug:
-        msg: "Iniciando reindexación para {{ app_name }}. Por favor espere..."
+        msg: "Iniciando reindexación para la base de datos: {{ tenant_code }} en ruta {{ app_base_path }}"
 
-    # Ejecutamos el reindex usando el entorno de rbenv y bundle exec
-    # Usamos CLASS=Product,Order,etc si quisieramos filtrar, pero searchkick:reindex:all hace todo.
-    - name: "5. Ejecutar Rake Task: searchkick:reindex:all"
+    # Usamos RAILS_ENV={{ tenant_code }} porque cada tenant es su propio entorno en database.yml
+    # Usamos searchkick:reindex:all para regenerar TODOS los índices (Productos, Ordenes, Clientes)
+    - name: "4. Ejecutar Reindexación (RAILS_ENV={{ tenant_code }})"
       shell: |
-        export RAILS_ENV=production
         export PATH="/home/deploy/.rbenv/bin:/home/deploy/.rbenv/shims:$PATH"
         eval "$(rbenv init -)"
-        bundle exec rake searchkick:reindex:all
+        bundle exec rake RAILS_ENV={{ tenant_code }} searchkick:reindex:all
       args:
-        chdir: "{{ app_dir }}"
-      async: 1200 # Timeout extendido a 20 mins para bases grandes
-      poll: 10
-      register: reindex_result
+        chdir: "{{ app_base_path }}"
+      async: 1800 # 30 minutos de timeout por si la base es muy grande
+      poll: 15
+      register: reindex_output
 
-    - name: "6. Resultado de la Reindexación"
+    - name: "5. Resultado Final"
       debug:
-        msg: "{{ reindex_result.stdout_lines }}"
+        var: reindex_output.stdout_lines
