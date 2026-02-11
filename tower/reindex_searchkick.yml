@@ -48,6 +48,8 @@
     - name: "6. Ejecutar Reindexación Completa (Espere a que finalice)"
       shell: |
         export RAILS_ENV={{ rails_env }}
+        # Desactivamos NewRelic para evitar timeouts por overhead en tareas largas
+        export NEW_RELIC_AGENT_ENABLED=false
         export PATH="/home/deploy/.rbenv/bin:/home/deploy/.rbenv/shims:$PATH"
         eval "$(rbenv init -)"
         bundle exec rake searchkick:reindex:all
