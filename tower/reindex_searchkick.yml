@@ -5,12 +5,10 @@
   become_user: deploy
   gather_facts: yes
   # GARANTÍA: Ejecuta solo en 1 servidor, nunca en paralelo.
-  # Al ser un índice compartido, correrlo en LB01 ya actualiza para LB02, LB03 y LB04.
   run_once: true
 
   tasks:
-    # 1. Normalización estricta de la variable tenant_code
-    # Si AWX envía ['pwcdat'] (lista) lo convierte a 'pwcdat' (texto).
+    # 1. Normalización de variable (Vital para que el Survey funcione)
     - name: "1. Normalizar código de compañía"
       set_fact:
         clean_tenant: >-
@@ -22,49 +20,34 @@
           ''
           {%- endif -%}
 
-    # 2. Validación de Seguridad
+    # 2. Validación
     - name: "2. Validar variable obligatoria"
       fail:
-        msg: "ERROR: La variable 'tenant_code' está vacía o no definida en el Survey."
+        msg: "ERROR: La variable 'tenant_code' está vacía. Revise el Survey."
       when: clean_tenant == '' or clean_tenant is undefined
 
-    # 3. Definición de Rutas
-    - name: "3. Configurar entorno"
+    # 3. Definición de variables para el comando Legacy
+    - name: "3. Configurar variables"
       set_fact:
-        app_path: "/home/deploy/erp-{{ clean_tenant }}/current"
-        rails_env: "{{ clean_tenant }}"
+        # Mapeamos a las variables que usaba el script antiguo para claridad
+        app_name: "erp-{{ clean_tenant }}"
+        env_name: "{{ clean_tenant }}"
 
-    # 4. Verificación de Carpeta
-    - name: "4. Verificar existencia del directorio"
-      stat:
-        path: "{{ app_path }}"
-      register: dir_check
-
-    - name: "5. Abortar si no existe la carpeta"
-      fail:
-        msg: "CRÍTICO: El directorio {{ app_path }} no existe. Verifique el código '{{ clean_tenant }}'."
-      when: not dir_check.stat.exists
-
-    # 5. Ejecución Síncrona (Sin 'async' para evitar spam en el log)
-    - name: "6. Ejecutar Reindexación Completa (Espere a que finalice)"
-      shell: |
-        export RAILS_ENV={{ rails_env }}
-        # OPTIMIZACIÓN CRÍTICA:
-        # 1. Desactivamos NewRelic para evitar que el monitoreo cuelgue el proceso (Timeout error).
-        # 2. Desactivamos Spring para forzar un arranque limpio de Rails.
-        export NEW_RELIC_AGENT_ENABLED=false
-        export DISABLE_SPRING=1
-        
-        export PATH="/home/deploy/.rbenv/bin:/home/deploy/.rbenv/shims:$PATH"
-        eval "$(rbenv init -)"
-        
-        echo "Iniciando reindexado para {{ rails_env }}..."
-        bundle exec rake searchkick:reindex:all
-      args:
-        chdir: "{{ app_path }}"
-      # Sin async ni poll: Ansible esperará pacientemente hasta que termine.
+    # 4. EJECUCIÓN MODO LEGACY (Tower Antiguo)
+    # Usamos exactamente el PATH y la estructura de comando del sistema anterior.
+    # Nota: Usamos searchkick:reindex:all para cubrir toda la empresa, ya que 
+    # la instrucción es no pedir clases específicas.
+    - name: "4. Reindexing elasticsearch (Legacy Style)"
+      command: >-
+        /bin/bash -l -c 'cd /home/deploy/{{ app_name }}/current && bundle exec rake RAILS_ENV={{ env_name }} searchkick:reindex:all'
+      environment:
+        # PATH exacto del sistema antiguo
+        PATH: "/home/deploy/.rbenv/plugins/ruby-build/bin:/home/deploy/.rbenv/bin:/home/deploy/.rbenv/plugins/ruby-build/bin:/home/deploy/.rbenv/shims:/home/deploy/.rbenv/bin:/usr/local/sbin:/usr/local/bin:/usr/local/sbin:/usr/bin:/sbin:/bin:/usr/games"
+        # Mantenemos estas protecciones por si acaso, no hacen daño y evitan el timeout
+        NEW_RELIC_AGENT_ENABLED: "false"
+        DISABLE_SPRING: "1"
       register: reindex_result
 
-    - name: "7. Resultado Final"
+    - name: "5. Resultado Final"
       debug:
         msg: "{{ reindex_result.stdout_lines }}"
