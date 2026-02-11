@@ -5,6 +5,7 @@
   become_user: deploy
   gather_facts: yes
   # GARANTÍA: Ejecuta solo en 1 servidor, nunca en paralelo.
+  # Al ser un índice compartido, correrlo en LB01 ya actualiza para LB02, LB03 y LB04.
   run_once: true
 
   tasks:
@@ -48,10 +49,16 @@
     - name: "6. Ejecutar Reindexación Completa (Espere a que finalice)"
       shell: |
         export RAILS_ENV={{ rails_env }}
-        # Desactivamos NewRelic para evitar timeouts por overhead en tareas largas
+        # OPTIMIZACIÓN CRÍTICA:
+        # 1. Desactivamos NewRelic para evitar que el monitoreo cuelgue el proceso (Timeout error).
+        # 2. Desactivamos Spring para forzar un arranque limpio de Rails.
         export NEW_RELIC_AGENT_ENABLED=false
+        export DISABLE_SPRING=1
+        
         export PATH="/home/deploy/.rbenv/bin:/home/deploy/.rbenv/shims:$PATH"
         eval "$(rbenv init -)"
+        
+        echo "Iniciando reindexado para {{ rails_env }}..."
         bundle exec rake searchkick:reindex:all
       args:
         chdir: "{{ app_path }}"
