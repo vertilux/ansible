@@ -9,20 +9,32 @@
 
   tasks:
     # PASO CRÍTICO: Normalización de variables
-    # Este paso busca si la variable viene como 'tenant_code' (Nuevo) O 'tenant_selection' (Viejo)
-    # y asigna el valor encontrado a 'actual_tenant'.
-    - name: "0. Detectar variable del Survey (Compatibilidad)"
+    # Detectamos la variable cruda (sea tenant_code o tenant_selection)
+    - name: "0. Detectar variable cruda"
       set_fact:
-        actual_tenant: "{{ tenant_code | default(tenant_selection) | default('') }}"
+        raw_input: "{{ tenant_code | default(tenant_selection) | default('') }}"
+
+    # CORRECCIÓN: Si AWX envía una lista ['pwcdat'] en lugar de un texto 'pwcdat',
+    # extraemos el primer elemento para evitar errores en la ruta del directorio.
+    - name: "0.1 Normalizar dato (Lista -> Texto)"
+      set_fact:
+        actual_tenant: >-
+          {%- if raw_input is string -%}
+          {{ raw_input }}
+          {%- elif raw_input is sequence and raw_input | length > 0 -%}
+          {{ raw_input[0] }}
+          {%- else -%}
+          ''
+          {%- endif -%}
 
     - name: "1. Validar recepción de datos"
       fail:
         msg: "ERROR: No se recibió el código de la compañía. Verifica que el Survey en AWX esté en ON y que la variable se llame 'tenant_code' o 'tenant_selection'."
-      when: actual_tenant == ''
+      when: actual_tenant == '' or actual_tenant is undefined
 
     - name: "2. Configurar rutas dinámicas"
       set_fact:
-        # Construye la ruta basada en la evidencia que me diste: /home/deploy/erp-pwcdat/current
+        # Construye la ruta basada en la evidencia: /home/deploy/erp-pwcdat/current
         app_base_path: "/home/deploy/erp-{{ actual_tenant }}/current"
         # El RAILS_ENV es el mismo código del tenant (ej. pwcdat)
         rails_env_name: "{{ actual_tenant }}"
