@@ -4,68 +4,58 @@
   become: yes
   become_user: deploy
   gather_facts: yes
-  # Ejecuta solo en 1 servidor para no sobrecargar el cluster de Elastic
+  # GARANTÍA: Ejecuta solo en 1 servidor, nunca en paralelo.
   run_once: true
 
   tasks:
-    # PASO CRÍTICO: Normalización de variables
-    # Detectamos la variable cruda (sea tenant_code o tenant_selection)
-    - name: "0. Detectar variable cruda"
+    # 1. Normalización estricta de la variable tenant_code
+    # Si AWX envía ['pwcdat'] (lista) lo convierte a 'pwcdat' (texto).
+    - name: "1. Normalizar código de compañía"
       set_fact:
-        raw_input: "{{ tenant_code | default(tenant_selection) | default('') }}"
-
-    # CORRECCIÓN: Si AWX envía una lista ['pwcdat'] en lugar de un texto 'pwcdat',
-    # extraemos el primer elemento para evitar errores en la ruta del directorio.
-    - name: "0.1 Normalizar dato (Lista -> Texto)"
-      set_fact:
-        actual_tenant: >-
-          {%- if raw_input is string -%}
-          {{ raw_input }}
-          {%- elif raw_input is sequence and raw_input | length > 0 -%}
-          {{ raw_input[0] }}
+        clean_tenant: >-
+          {%- if tenant_code is string -%}
+          {{ tenant_code }}
+          {%- elif tenant_code is sequence and tenant_code | length > 0 -%}
+          {{ tenant_code[0] }}
           {%- else -%}
           ''
           {%- endif -%}
 
-    - name: "1. Validar recepción de datos"
+    # 2. Validación de Seguridad
+    - name: "2. Validar variable obligatoria"
       fail:
-        msg: "ERROR: No se recibió el código de la compañía. Verifica que el Survey en AWX esté en ON y que la variable se llame 'tenant_code' o 'tenant_selection'."
-      when: actual_tenant == '' or actual_tenant is undefined
+        msg: "ERROR: La variable 'tenant_code' está vacía o no definida en el Survey."
+      when: clean_tenant == '' or clean_tenant is undefined
 
-    - name: "2. Configurar rutas dinámicas"
+    # 3. Definición de Rutas
+    - name: "3. Configurar entorno"
       set_fact:
-        # Construye la ruta basada en la evidencia: /home/deploy/erp-pwcdat/current
-        app_base_path: "/home/deploy/erp-{{ actual_tenant }}/current"
-        # El RAILS_ENV es el mismo código del tenant (ej. pwcdat)
-        rails_env_name: "{{ actual_tenant }}"
+        app_path: "/home/deploy/erp-{{ clean_tenant }}/current"
+        rails_env: "{{ clean_tenant }}"
 
-    - name: "3. Validar que el directorio existe en el servidor"
+    # 4. Verificación de Carpeta
+    - name: "4. Verificar existencia del directorio"
       stat:
-        path: "{{ app_base_path }}"
+        path: "{{ app_path }}"
       register: dir_check
 
-    - name: "4. Detener si la carpeta no existe (Seguridad)"
+    - name: "5. Abortar si no existe la carpeta"
       fail:
-        msg: "El directorio {{ app_base_path }} no existe en el servidor {{ inventory_hostname }}. Verifica que el código '{{ actual_tenant }}' sea correcto."
+        msg: "CRÍTICO: El directorio {{ app_path }} no existe. Verifique el código '{{ clean_tenant }}'."
       when: not dir_check.stat.exists
 
-    - name: "5. Confirmar inicio de tarea"
-      debug:
-        msg: "Iniciando reindexación para: {{ rails_env_name }} en {{ app_base_path }}"
-
-    # Ejecutamos el reindex usando el entorno de rbenv y bundle exec
-    - name: "6. Ejecutar Rake Task: searchkick:reindex:all"
+    # 5. Ejecución Síncrona (Sin 'async' para evitar spam en el log)
+    - name: "6. Ejecutar Reindexación Completa (Espere a que finalice)"
       shell: |
-        export RAILS_ENV={{ rails_env_name }}
+        export RAILS_ENV={{ rails_env }}
         export PATH="/home/deploy/.rbenv/bin:/home/deploy/.rbenv/shims:$PATH"
         eval "$(rbenv init -)"
         bundle exec rake searchkick:reindex:all
       args:
-        chdir: "{{ app_base_path }}"
-      async: 1800 # 30 minutos de timeout
-      poll: 15
+        chdir: "{{ app_path }}"
+      # Sin async ni poll: Ansible esperará pacientemente hasta que termine.
       register: reindex_result
 
-    - name: "7. Resultado de la Reindexación"
+    - name: "7. Resultado Final"
       debug:
         msg: "{{ reindex_result.stdout_lines }}"
