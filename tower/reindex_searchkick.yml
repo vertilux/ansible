@@ -1,0 +1,63 @@
+---
+- name: "ERP Vertilux - Reindex Elasticsearch (Searchkick)"
+  hosts: all
+  become: yes
+  become_user: deploy
+  gather_facts: yes
+  # IMPORTANTE: Ejecutamos solo en un servidor del grupo para no duplicar la carga en Elastic.
+  # El indice es compartido. Si se reindexa desde lb01, ya sirve para lb04.
+  run_once: true 
+
+  vars:
+    # Mapeo de Selección Humana -> Nombre de Directorio Real
+    # La variable 'tenant_selection' vendrá del Survey de AWX
+    tenant_map:
+      "Miami (ACCLTD)"       : "erp-accltd"
+      "España (ESPDAT)"      : "erp-espdat"
+      "Mexico (MXPDAT)"      : "erp-mxpdat"
+      "Dominicana (RDMDAT)"  : "erp-rdmdat"
+      "Puerto Rico (PRNDAT)" : "erp-prndat"
+      "Colombia (COVDAT)"    : "erp-covdat"
+      "Panama WC (WCPDAT)"   : "erp-wcpdat"
+      "El Salvador (SALDAT)" : "erp-saldat"
+      "Panama Selca (PWCDAT)": "erp-pwcdat"
+      "Brasil (BZIDAT)"      : "erp-bzidat"
+      "Panama (PANDAT)"      : "erp-pandat"
+
+  tasks:
+    - name: "1. Calcular directorio objetivo"
+      set_fact:
+        app_dir: "/home/deploy/{{ tenant_map[tenant_selection] }}/current"
+        app_name: "{{ tenant_map[tenant_selection] }}"
+
+    - name: "2. Validar que el directorio existe en el servidor"
+      stat:
+        path: "{{ app_dir }}"
+      register: dir_check
+
+    - name: "3. Abortar si el directorio no existe (Seguridad)"
+      fail:
+        msg: "El directorio {{ app_dir }} no existe en este servidor. Verifique la selección."
+      when: not dir_check.stat.exists
+
+    - name: "4. Inicio de Reindexación (Esto puede tardar)"
+      debug:
+        msg: "Iniciando reindexación para {{ app_name }}. Por favor espere..."
+
+    # Ejecutamos el reindex usando el entorno de rbenv y bundle exec
+    # Usamos CLASS=Product,Order,etc si quisieramos filtrar, pero searchkick:reindex:all hace todo.
+    - name: "5. Ejecutar Rake Task: searchkick:reindex:all"
+      shell: |
+        export RAILS_ENV=production
+        export PATH="/home/deploy/.rbenv/bin:/home/deploy/.rbenv/shims:$PATH"
+        eval "$(rbenv init -)"
+        bundle exec rake searchkick:reindex:all
+      args:
+        chdir: "{{ app_dir }}"
+      async: 1200 # Timeout extendido a 20 mins para bases grandes
+      poll: 10
+      register: reindex_result
+
+    - name: "6. Resultado de la Reindexación"
+      debug:
+        msg: "{{ reindex_result.stdout_lines }}"
