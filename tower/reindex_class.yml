@@ -4,11 +4,15 @@
   become: yes
   become_user: deploy
   gather_facts: yes
-  # GARANTÍA: Ejecuta solo en 1 servidor.
+  # GARANTÍA: Ejecuta solo en 1 servidor (lb01, etc.), nunca en paralelo.
   run_once: true
 
   tasks:
-    # 1. Normalización
+    # -------------------------------------------------------------------------
+    # 1. PREPARACIÓN DE VARIABLES
+    # -------------------------------------------------------------------------
+    
+    # Mantenemos esto SOLO porque es necesario para que AWX no falle con los corchetes ['accltd']
     - name: "1. Normalizar código de compañía"
       set_fact:
         clean_tenant: >-
@@ -20,7 +24,7 @@
           ''
           {%- endif -%}
 
-    # 2. Validación
+    # Validamos que se haya seleccionado algo en el Survey
     - name: "2. Validar datos de entrada"
       fail:
         msg: "ERROR: Faltan datos. Asegúrese de seleccionar Compañía y Clase en el Survey."
@@ -28,94 +32,23 @@
         - clean_tenant == '' or clean_tenant is undefined
         - target_class is undefined or target_class == ''
 
-    # 3. Configuración
+    # Configuramos las rutas limpias
     - name: "3. Configurar entorno de ejecución"
       set_fact:
-        app: "erp-{{ clean_tenant }}"
-        env: "{{ clean_tenant }}"
-        class_to_reindex: "{{ target_class }}"
+        app_path: "/home/deploy/erp-{{ clean_tenant }}/current"
+        rails_env: "{{ clean_tenant }}"
 
-    # --- HOTFIX DEFINITIVO: SANITIZACIÓN PROFUNDA (RUBY) ---
-    # Reescribimos el método search_data inyectando una función de limpieza (clean_data).
-    # Esta función elimina caracteres corruptos, backslashes y bytes nulos ANTES de generar el JSON.
-    - name: "3.5 Hotfix: Reescribir método search_data con Sanitización Agresiva"
-      shell: |
-        cat <<'RUBYEOF' > patch_shipping_reference.rb
-        file_path = 'app/models/shipping_reference.rb'
-        content = File.read(file_path)
-
-        # Definimos el método con una lambda de limpieza 'clean_data'
-        # Usamos <<~'METHOD' (comillas simples) para evitar interpolación accidental
-        safe_method = <<~'METHOD'
-          def search_data
-            # FUNCIÓN DE LIMPIEZA INDUSTRIAL
-            # 1. Fuerza UTF-8 y reemplaza caracteres inválidos
-            # 2. Elimina backslashes (\) que rompen el JSON
-            # 3. Elimina caracteres de control (0x00-0x1F)
-            clean_data = ->(val) {
-              return nil if val.nil?
-              val.to_s.encode('UTF-8', invalid: :replace, undef: :replace, replace: '')
-                 .gsub('\\', '')  # Elimina backslashes peligrosos
-                 .tr("\u0000-\u001f", '') # Elimina caracteres de control
-                 .squish
-            }
-
-            {
-              id: id,
-              number: number,
-              customer_id: customer_field,
-              # Aplicamos limpieza a los campos que vienen de SQL Server/Granite
-              customer_namer: clean_data.call(Granite::Document.where(TradingPartnerCode: customer).pluck(:TradingPartnerDescription).first),
-              location: location,
-              shipvia: shipvia,
-              type: ShippingReferenceType.find_by(id: shipping_reference_type_id).try(:name),
-              # Limpiamos cada elemento del array de documentos
-              granite_document: Granite::Document.where('"ID" IN (?)', granite_document).pluck(:Number).map { |v| clean_data.call(v) },
-              user_id: user_id,
-              user_name: User.find_by(id: user_id).try(:fname),
-              status: status,
-              created_at: created_at,
-              updated_at: updated_at
-            }
-          end
-        METHOD
-
-        # Expresión regular para encontrar el bloque 'def search_data ... end' original
-        regex = /^\s*def search_data\s*$.*?^\s*end\s*$/m
-
-        if content.match?(regex)
-          # Reemplazamos el bloque viejo por el blindado
-          new_content = content.sub(regex, safe_method.strip.gsub(/^/, '  ')) 
-          File.write(file_path, new_content)
-          puts "PATCH SUCCESS: search_data overwritten with sanitization logic."
-        else
-          # Si ya tiene la lógica de limpieza, no tocamos
-          if content.include?("clean_data = ->")
-            puts "PATCH SKIP: File already secure."
-          else
-            puts "PATCH WARNING: Could not find method block to replace."
-          end
-        end
-        RUBYEOF
-
-        # Ejecutamos el parche
-        export PATH="/home/deploy/.rbenv/bin:/home/deploy/.rbenv/shims:$PATH"
-        eval "$(rbenv init -)"
-        ruby patch_shipping_reference.rb
-      args:
-        chdir: "/home/deploy/{{ app }}/current"
-      # Solo ejecutamos esto si la clase es ShippingReference
-      when: class_to_reindex == 'ShippingReference'
-
-    # 4. EJECUCIÓN (Lotes Pequeños)
-    # Mantenemos BATCH=50 para minimizar el impacto si un lote falla, aunque con la limpieza no debería.
-    - name: "4. Reindexing {{ class_to_reindex }} for {{ env }}"
+    # -------------------------------------------------------------------------
+    # 2. EJECUCIÓN "LEGACY" (Versión Original y Estable)
+    # -------------------------------------------------------------------------
+    # Sin parches, sin scripts extra. Solo el comando que funcionó manualmente.
+    
+    - name: "4. Reindexing {{ target_class }} for {{ rails_env }}"
       command: >-
-        /bin/bash -l -c 'cd /home/deploy/{{app}}/current && bundle exec rake RAILS_ENV={{env}} searchkick:reindex CLASS={{class_to_reindex}} BATCH=50'
+        /bin/bash -l -c 'cd {{ app_path }} && bundle exec rake RAILS_ENV={{ rails_env }} searchkick:reindex CLASS={{ target_class }}'
       environment:
+        # PATH exacto del sistema antiguo para máxima compatibilidad
         PATH: "/home/deploy/.rbenv/plugins/ruby-build/bin:/home/deploy/.rbenv/bin:/home/deploy/.rbenv/plugins/ruby-build/bin:/home/deploy/.rbenv/shims:/home/deploy/.rbenv/bin:/usr/local/sbin:/usr/local/bin:/usr/local/sbin:/usr/bin:/sbin:/bin:/usr/games"
-        LC_ALL: "en_US.UTF-8"
-        LANG: "en_US.UTF-8"
       register: reindex_result
 
     - name: "5. Resultado Final"
