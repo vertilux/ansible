@@ -4,11 +4,11 @@
   become: yes
   become_user: deploy
   gather_facts: yes
-  # GARANTÍA: Ejecuta solo en 1 servidor, nunca en paralelo.
+  # GARANTÍA: Ejecuta solo en 1 servidor (lb01, etc.), nunca en paralelo.
   run_once: true
 
   tasks:
-    # 1. Normalización de variable (Vital para que el Survey funcione)
+    # 1. Normalización de variable (Vital para que el Survey funcione con el formato Nombre:Codigo)
     - name: "1. Normalizar código de compañía"
       set_fact:
         clean_tenant: >-
@@ -20,32 +20,30 @@
           ''
           {%- endif -%}
 
-    # 2. Validación
+    # 2. Validación de seguridad
     - name: "2. Validar variable obligatoria"
       fail:
         msg: "ERROR: La variable 'tenant_code' está vacía. Revise el Survey."
       when: clean_tenant == '' or clean_tenant is undefined
 
-    # 3. Definición de variables para el comando Legacy
-    - name: "3. Configurar variables"
+    # 3. Configuración de Variables "Legacy"
+    # Usamos ShippingReference porque fue el que validaste como exitoso y rápido.
+    # Si en el futuro necesitas reindexar otra cosa (ej. Order, Product), solo cambias esta línea en el código.
+    - name: "3. Configurar variables de entorno"
       set_fact:
-        # Mapeamos a las variables que usaba el script antiguo para claridad
-        app_name: "erp-{{ clean_tenant }}"
-        env_name: "{{ clean_tenant }}"
+        app: "erp-{{ clean_tenant }}"
+        env: "{{ clean_tenant }}"
+        class_to_reindex: "ShippingReference"
 
-    # 4. EJECUCIÓN MODO LEGACY (Tower Antiguo)
-    # Usamos exactamente el PATH y la estructura de comando del sistema anterior.
-    # Nota: Usamos searchkick:reindex:all para cubrir toda la empresa, ya que 
-    # la instrucción es no pedir clases específicas.
-    - name: "4. Reindexing elasticsearch (Legacy Style)"
+    # 4. EJECUCIÓN MODO LEGACY (Idéntico al Tower Antiguo)
+    # Usamos /bin/bash -l -c para cargar el perfil completo (rbenv, gems, memoria)
+    # Esto replica tu éxito manual en consola.
+    - name: "4. Reindexing elasticsearch class: {{ class_to_reindex }}"
       command: >-
-        /bin/bash -l -c 'cd /home/deploy/{{ app_name }}/current && bundle exec rake RAILS_ENV={{ env_name }} searchkick:reindex:all'
+        /bin/bash -l -c 'cd /home/deploy/{{app}}/current && bundle exec rake RAILS_ENV={{env}} searchkick:reindex CLASS={{class_to_reindex}}'
       environment:
-        # PATH exacto del sistema antiguo
+        # PATH exacto del sistema antiguo que solicitaste
         PATH: "/home/deploy/.rbenv/plugins/ruby-build/bin:/home/deploy/.rbenv/bin:/home/deploy/.rbenv/plugins/ruby-build/bin:/home/deploy/.rbenv/shims:/home/deploy/.rbenv/bin:/usr/local/sbin:/usr/local/bin:/usr/local/sbin:/usr/bin:/sbin:/bin:/usr/games"
-        # Mantenemos estas protecciones por si acaso, no hacen daño y evitan el timeout
-        NEW_RELIC_AGENT_ENABLED: "false"
-        DISABLE_SPRING: "1"
       register: reindex_result
 
     - name: "5. Resultado Final"
