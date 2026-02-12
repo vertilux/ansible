@@ -35,27 +35,31 @@
         env: "{{ clean_tenant }}"
         class_to_reindex: "{{ target_class }}"
 
-    # --- NUEVO PASO: AUTO-REPARACIÓN DE CÓDIGO (HOTFIXES) ---
-    # Parcheamos User y ShippingReferenceType para evitar crashes por IDs huérfanos.
-    # Usamos shell para correr múltiples seds en orden.
-    - name: "3.5 Hotfix: Parchear bugs de IDs no encontrados"
+    # --- HOTFIXES DE INGENIERÍA: LIMPIEZA DE CÓDIGO Y DATOS ---
+    # 1. Parcheamos User/Type para que no falle si el ID no existe.
+    # 2. Parcheamos campos de texto (Granite/Description) con .to_s.squish para eliminar saltos de línea corruptos que rompen el JSON.
+    - name: "3.5 Hotfix: Parchear bugs de IDs y Sanitizar Textos"
       shell: |
-        # Fix 1: Usuario no encontrado (cambia .find por .find_by)
+        # Fix 1: IDs Huérfanos (User y ReferenceType)
         sed -i 's/User.find(user_id).fname/User.find_by(id: user_id).try(:fname)/g' app/models/shipping_reference.rb
-        
-        # Fix 2: Tipo de referencia no encontrado (mismo cambio)
         sed -i 's/ShippingReferenceType.find(shipping_reference_type_id).name/ShippingReferenceType.find_by(id: shipping_reference_type_id).try(:name)/g' app/models/shipping_reference.rb
+        
+        # Fix 2: Sanitización de Datos (Eliminar saltos de línea \n que causan Error 400 Malformed JSON)
+        # Limpiamos customer_namer (Descripción del partner)
+        sed -i 's/pluck(:TradingPartnerDescription).first/pluck(:TradingPartnerDescription).first.to_s.squish/g' app/models/shipping_reference.rb
+        # Limpiamos granite_document (Array de Números)
+        sed -i 's/pluck(:Number)/pluck(:Number).map(&:to_s).map(&:squish)/g' app/models/shipping_reference.rb
       args:
         chdir: "/home/deploy/{{ app }}/current"
       # Solo ejecutamos esto si la clase es ShippingReference
       when: class_to_reindex == 'ShippingReference'
       ignore_errors: yes 
 
-    # 4. EJECUCIÓN (Optimizada con BATCH y Encoding)
-    # Agregamos BATCH=200 para reducir el tamaño del paquete JSON y evitar errores de parseo en registros corruptos.
+    # 4. EJECUCIÓN (Super Segura: BATCH 50 + UTF-8)
+    # Bajamos el BATCH a 50 para máxima estabilidad en datos sucios.
     - name: "4. Reindexing {{ class_to_reindex }} for {{ env }}"
       command: >-
-        /bin/bash -l -c 'cd /home/deploy/{{app}}/current && bundle exec rake RAILS_ENV={{env}} searchkick:reindex CLASS={{class_to_reindex}} BATCH=200'
+        /bin/bash -l -c 'cd /home/deploy/{{app}}/current && bundle exec rake RAILS_ENV={{env}} searchkick:reindex CLASS={{class_to_reindex}} BATCH=50'
       environment:
         PATH: "/home/deploy/.rbenv/plugins/ruby-build/bin:/home/deploy/.rbenv/bin:/home/deploy/.rbenv/plugins/ruby-build/bin:/home/deploy/.rbenv/shims:/home/deploy/.rbenv/bin:/usr/local/sbin:/usr/local/bin:/usr/local/sbin:/usr/bin:/sbin:/bin:/usr/games"
         # Forzar encoding para evitar crashes por caracteres extraños en la DB
