@@ -35,28 +35,42 @@
         env: "{{ clean_tenant }}"
         class_to_reindex: "{{ target_class }}"
 
-    # --- HOTFIXES DE INGENIERÍA: REEMPLAZO QUIRÚRGICO (RUBY) ---
-    # En lugar de usar SED (que falló por sintaxis), usamos un script Ruby para reescribir
-    # el método 'search_data' completo. Esto garantiza código limpio y sanitizado.
-    - name: "3.5 Hotfix: Reescribir método search_data (Ruby Script)"
+    # --- HOTFIX DEFINITIVO: SANITIZACIÓN PROFUNDA (RUBY) ---
+    # Reescribimos el método search_data inyectando una función de limpieza (clean_data).
+    # Esta función elimina caracteres corruptos, backslashes y bytes nulos ANTES de generar el JSON.
+    - name: "3.5 Hotfix: Reescribir método search_data con Sanitización Agresiva"
       shell: |
         cat <<'RUBYEOF' > patch_shipping_reference.rb
         file_path = 'app/models/shipping_reference.rb'
         content = File.read(file_path)
 
-        # Definimos el método 100% limpio y seguro (sin errores de sintaxis)
-        # Incluye las protecciones: find_by/try (para IDs huérfanos) y .to_s.squish (para saltos de línea)
-        safe_method = <<~METHOD
+        # Definimos el método con una lambda de limpieza 'clean_data'
+        # Usamos <<~'METHOD' (comillas simples) para evitar interpolación accidental
+        safe_method = <<~'METHOD'
           def search_data
+            # FUNCIÓN DE LIMPIEZA INDUSTRIAL
+            # 1. Fuerza UTF-8 y reemplaza caracteres inválidos
+            # 2. Elimina backslashes (\) que rompen el JSON
+            # 3. Elimina caracteres de control (0x00-0x1F)
+            clean_data = ->(val) {
+              return nil if val.nil?
+              val.to_s.encode('UTF-8', invalid: :replace, undef: :replace, replace: '')
+                 .gsub('\\', '')  # Elimina backslashes peligrosos
+                 .tr("\u0000-\u001f", '') # Elimina caracteres de control
+                 .squish
+            }
+
             {
               id: id,
               number: number,
               customer_id: customer_field,
-              customer_namer: Granite::Document.where(TradingPartnerCode: customer).pluck(:TradingPartnerDescription).first.to_s.squish,
+              # Aplicamos limpieza a los campos que vienen de SQL Server/Granite
+              customer_namer: clean_data.call(Granite::Document.where(TradingPartnerCode: customer).pluck(:TradingPartnerDescription).first),
               location: location,
               shipvia: shipvia,
               type: ShippingReferenceType.find_by(id: shipping_reference_type_id).try(:name),
-              granite_document: Granite::Document.where('"ID" IN (?)', granite_document).pluck(:Number).map(&:to_s).map(&:squish),
+              # Limpiamos cada elemento del array de documentos
+              granite_document: Granite::Document.where('"ID" IN (?)', granite_document).pluck(:Number).map { |v| clean_data.call(v) },
               user_id: user_id,
               user_name: User.find_by(id: user_id).try(:fname),
               status: status,
@@ -67,17 +81,16 @@
         METHOD
 
         # Expresión regular para encontrar el bloque 'def search_data ... end' original
-        # Busca desde 'def search_data' hasta el 'end' que cierra el método.
         regex = /^\s*def search_data\s*$.*?^\s*end\s*$/m
 
         if content.match?(regex)
-          # Reemplazamos el bloque viejo (o roto) con el nuevo bloque seguro
+          # Reemplazamos el bloque viejo por el blindado
           new_content = content.sub(regex, safe_method.strip.gsub(/^/, '  ')) 
           File.write(file_path, new_content)
-          puts "PATCH SUCCESS: search_data method overwritten cleanly."
+          puts "PATCH SUCCESS: search_data overwritten with sanitization logic."
         else
-          # Fallback: Si el regex no casa (archivo muy modificado), verificamos si ya tiene el código seguro
-          if content.include?("first.to_s.squish") && content.include?("map(&:squish)")
+          # Si ya tiene la lógica de limpieza, no tocamos
+          if content.include?("clean_data = ->")
             puts "PATCH SKIP: File already secure."
           else
             puts "PATCH WARNING: Could not find method block to replace."
@@ -85,7 +98,7 @@
         end
         RUBYEOF
 
-        # Ejecutamos el parche usando el entorno Ruby de la app
+        # Ejecutamos el parche
         export PATH="/home/deploy/.rbenv/bin:/home/deploy/.rbenv/shims:$PATH"
         eval "$(rbenv init -)"
         ruby patch_shipping_reference.rb
@@ -94,7 +107,8 @@
       # Solo ejecutamos esto si la clase es ShippingReference
       when: class_to_reindex == 'ShippingReference'
 
-    # 4. EJECUCIÓN (Super Segura: BATCH 50 + UTF-8)
+    # 4. EJECUCIÓN (Lotes Pequeños)
+    # Mantenemos BATCH=50 para minimizar el impacto si un lote falla, aunque con la limpieza no debería.
     - name: "4. Reindexing {{ class_to_reindex }} for {{ env }}"
       command: >-
         /bin/bash -l -c 'cd /home/deploy/{{app}}/current && bundle exec rake RAILS_ENV={{env}} searchkick:reindex CLASS={{class_to_reindex}} BATCH=50'
