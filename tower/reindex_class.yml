@@ -35,24 +35,32 @@
         env: "{{ clean_tenant }}"
         class_to_reindex: "{{ target_class }}"
 
-    # --- NUEVO PASO: AUTO-REPARACIÓN DE CÓDIGO ---
-    # Este paso corrige el bug en ShippingReference que causa el crash por usuarios borrados.
-    # Cambia 'User.find(user_id)' (estricto) por 'User.find_by(id: user_id).try(:fname)' (seguro).
-    - name: "3.5 Hotfix: Parchear bug de usuario no encontrado (ShippingReference)"
-      command: >-
+    # --- NUEVO PASO: AUTO-REPARACIÓN DE CÓDIGO (HOTFIXES) ---
+    # Parcheamos User y ShippingReferenceType para evitar crashes por IDs huérfanos.
+    # Usamos shell para correr múltiples seds en orden.
+    - name: "3.5 Hotfix: Parchear bugs de IDs no encontrados"
+      shell: |
+        # Fix 1: Usuario no encontrado (cambia .find por .find_by)
         sed -i 's/User.find(user_id).fname/User.find_by(id: user_id).try(:fname)/g' app/models/shipping_reference.rb
+        
+        # Fix 2: Tipo de referencia no encontrado (mismo cambio)
+        sed -i 's/ShippingReferenceType.find(shipping_reference_type_id).name/ShippingReferenceType.find_by(id: shipping_reference_type_id).try(:name)/g' app/models/shipping_reference.rb
       args:
         chdir: "/home/deploy/{{ app }}/current"
-      # Solo ejecutamos esto si la clase es ShippingReference, aunque no hace daño correrlo siempre.
+      # Solo ejecutamos esto si la clase es ShippingReference
       when: class_to_reindex == 'ShippingReference'
       ignore_errors: yes 
 
-    # 4. EJECUCIÓN
+    # 4. EJECUCIÓN (Optimizada con BATCH y Encoding)
+    # Agregamos BATCH=200 para reducir el tamaño del paquete JSON y evitar errores de parseo en registros corruptos.
     - name: "4. Reindexing {{ class_to_reindex }} for {{ env }}"
       command: >-
-        /bin/bash -l -c 'cd /home/deploy/{{app}}/current && bundle exec rake RAILS_ENV={{env}} searchkick:reindex CLASS={{class_to_reindex}}'
+        /bin/bash -l -c 'cd /home/deploy/{{app}}/current && bundle exec rake RAILS_ENV={{env}} searchkick:reindex CLASS={{class_to_reindex}} BATCH=200'
       environment:
         PATH: "/home/deploy/.rbenv/plugins/ruby-build/bin:/home/deploy/.rbenv/bin:/home/deploy/.rbenv/plugins/ruby-build/bin:/home/deploy/.rbenv/shims:/home/deploy/.rbenv/bin:/usr/local/sbin:/usr/local/bin:/usr/local/sbin:/usr/bin:/sbin:/bin:/usr/games"
+        # Forzar encoding para evitar crashes por caracteres extraños en la DB
+        LC_ALL: "en_US.UTF-8"
+        LANG: "en_US.UTF-8"
       register: reindex_result
 
     - name: "5. Resultado Final"
