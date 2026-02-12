@@ -38,7 +38,7 @@
     # --- HOTFIX DEFINITIVO: SANITIZACIÓN PROFUNDA (RUBY) ---
     # Reescribimos el método search_data inyectando una función de limpieza (clean_data).
     # Esta función elimina caracteres corruptos, backslashes y bytes nulos ANTES de generar el JSON.
-    - name: "3.5 Hotfix: Reescribir método search_data con Sanitización Agresiva"
+    - name: '3.5 Hotfix: Reescribir método search_data con Sanitización Agresiva'
       shell: |
         cat <<'RUBYEOF' > patch_shipping_reference.rb
         file_path = 'app/models/shipping_reference.rb'
