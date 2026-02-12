@@ -36,19 +36,30 @@
         class_to_reindex: "{{ target_class }}"
 
     # --- HOTFIXES DE INGENIERÍA: LIMPIEZA DE CÓDIGO Y DATOS ---
-    # 1. Parcheamos User/Type para que no falle si el ID no existe.
-    # 2. Parcheamos campos de texto (Granite/Description) con .to_s.squish para eliminar saltos de línea corruptos que rompen el JSON.
-    - name: "3.5 Hotfix: Parchear bugs de IDs y Sanitizar Textos"
+    # Corrección V3: Manejo correcto de caracteres especiales (&) en SED y reparación de daños previos.
+    - name: "3.5 Hotfix: Parchear bugs de IDs y Sanitizar Textos (Safe Mode)"
       shell: |
-        # Fix 1: IDs Huérfanos (User y ReferenceType)
+        # 1. Fix IDs Huérfanos (User y ReferenceType) - Idempotente por naturaleza
         sed -i 's/User.find(user_id).fname/User.find_by(id: user_id).try(:fname)/g' app/models/shipping_reference.rb
         sed -i 's/ShippingReferenceType.find(shipping_reference_type_id).name/ShippingReferenceType.find_by(id: shipping_reference_type_id).try(:name)/g' app/models/shipping_reference.rb
         
-        # Fix 2: Sanitización de Datos (Eliminar saltos de línea \n que causan Error 400 Malformed JSON)
-        # Limpiamos customer_namer (Descripción del partner)
-        sed -i 's/pluck(:TradingPartnerDescription).first/pluck(:TradingPartnerDescription).first.to_s.squish/g' app/models/shipping_reference.rb
-        # Limpiamos granite_document (Array de Números)
-        sed -i 's/pluck(:Number)/pluck(:Number).map(&:to_s).map(&:squish)/g' app/models/shipping_reference.rb
+        # 2. Sanitización: Customer Namer (Descripción del partner)
+        # Solo aplicamos si no tiene ya el parche .squish
+        if ! grep -q "TradingPartnerDescription).first.to_s.squish" app/models/shipping_reference.rb; then
+          sed -i 's/pluck(:TradingPartnerDescription).first/pluck(:TradingPartnerDescription).first.to_s.squish/g' app/models/shipping_reference.rb
+        fi
+
+        # 3. Sanitización: Granite Document (El que falló antes)
+        # PASO A: REPARAR DAÑO. Si el archivo tiene el error de sintaxis del intento anterior, lo arreglamos.
+        # Reemplazamos la sintaxis rota "map(pluck(:Number):to_s)" por la correcta "map(&:to_s)"
+        sed -i 's/map(pluck(:Number):to_s)/map(\&:to_s)/g' app/models/shipping_reference.rb
+        sed -i 's/map(pluck(:Number):squish)/map(\&:squish)/g' app/models/shipping_reference.rb
+
+        # PASO B: APLICAR PARCHE. Solo si no está aplicado y el código está limpio.
+        # IMPORTANTE: Usamos \& para escapar el ampersand en el comando sed.
+        if ! grep -q "pluck(:Number).map" app/models/shipping_reference.rb; then
+          sed -i 's/pluck(:Number)/pluck(:Number).map(\&:to_s).map(\&:squish)/g' app/models/shipping_reference.rb
+        fi
       args:
         chdir: "/home/deploy/{{ app }}/current"
       # Solo ejecutamos esto si la clase es ShippingReference
@@ -56,13 +67,11 @@
       ignore_errors: yes 
 
     # 4. EJECUCIÓN (Super Segura: BATCH 50 + UTF-8)
-    # Bajamos el BATCH a 50 para máxima estabilidad en datos sucios.
     - name: "4. Reindexing {{ class_to_reindex }} for {{ env }}"
       command: >-
         /bin/bash -l -c 'cd /home/deploy/{{app}}/current && bundle exec rake RAILS_ENV={{env}} searchkick:reindex CLASS={{class_to_reindex}} BATCH=50'
       environment:
         PATH: "/home/deploy/.rbenv/plugins/ruby-build/bin:/home/deploy/.rbenv/bin:/home/deploy/.rbenv/plugins/ruby-build/bin:/home/deploy/.rbenv/shims:/home/deploy/.rbenv/bin:/usr/local/sbin:/usr/local/bin:/usr/local/sbin:/usr/bin:/sbin:/bin:/usr/games"
-        # Forzar encoding para evitar crashes por caracteres extraños en la DB
         LC_ALL: "en_US.UTF-8"
         LANG: "en_US.UTF-8"
       register: reindex_result
