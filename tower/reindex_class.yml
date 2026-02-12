@@ -35,36 +35,64 @@
         env: "{{ clean_tenant }}"
         class_to_reindex: "{{ target_class }}"
 
-    # --- HOTFIXES DE INGENIERÍA: LIMPIEZA DE CÓDIGO Y DATOS ---
-    # Corrección V3: Manejo correcto de caracteres especiales (&) en SED y reparación de daños previos.
-    - name: "3.5 Hotfix: Parchear bugs de IDs y Sanitizar Textos (Safe Mode)"
+    # --- HOTFIXES DE INGENIERÍA: REEMPLAZO QUIRÚRGICO (RUBY) ---
+    # En lugar de usar SED (que falló por sintaxis), usamos un script Ruby para reescribir
+    # el método 'search_data' completo. Esto garantiza código limpio y sanitizado.
+    - name: "3.5 Hotfix: Reescribir método search_data (Ruby Script)"
       shell: |
-        # 1. Fix IDs Huérfanos (User y ReferenceType) - Idempotente por naturaleza
-        sed -i 's/User.find(user_id).fname/User.find_by(id: user_id).try(:fname)/g' app/models/shipping_reference.rb
-        sed -i 's/ShippingReferenceType.find(shipping_reference_type_id).name/ShippingReferenceType.find_by(id: shipping_reference_type_id).try(:name)/g' app/models/shipping_reference.rb
-        
-        # 2. Sanitización: Customer Namer (Descripción del partner)
-        # Solo aplicamos si no tiene ya el parche .squish
-        if ! grep -q "TradingPartnerDescription).first.to_s.squish" app/models/shipping_reference.rb; then
-          sed -i 's/pluck(:TradingPartnerDescription).first/pluck(:TradingPartnerDescription).first.to_s.squish/g' app/models/shipping_reference.rb
-        fi
+        cat <<'RUBYEOF' > patch_shipping_reference.rb
+        file_path = 'app/models/shipping_reference.rb'
+        content = File.read(file_path)
 
-        # 3. Sanitización: Granite Document (El que falló antes)
-        # PASO A: REPARAR DAÑO. Si el archivo tiene el error de sintaxis del intento anterior, lo arreglamos.
-        # Reemplazamos la sintaxis rota "map(pluck(:Number):to_s)" por la correcta "map(&:to_s)"
-        sed -i 's/map(pluck(:Number):to_s)/map(\&:to_s)/g' app/models/shipping_reference.rb
-        sed -i 's/map(pluck(:Number):squish)/map(\&:squish)/g' app/models/shipping_reference.rb
+        # Definimos el método 100% limpio y seguro (sin errores de sintaxis)
+        # Incluye las protecciones: find_by/try (para IDs huérfanos) y .to_s.squish (para saltos de línea)
+        safe_method = <<~METHOD
+          def search_data
+            {
+              id: id,
+              number: number,
+              customer_id: customer_field,
+              customer_namer: Granite::Document.where(TradingPartnerCode: customer).pluck(:TradingPartnerDescription).first.to_s.squish,
+              location: location,
+              shipvia: shipvia,
+              type: ShippingReferenceType.find_by(id: shipping_reference_type_id).try(:name),
+              granite_document: Granite::Document.where('"ID" IN (?)', granite_document).pluck(:Number).map(&:to_s).map(&:squish),
+              user_id: user_id,
+              user_name: User.find_by(id: user_id).try(:fname),
+              status: status,
+              created_at: created_at,
+              updated_at: updated_at
+            }
+          end
+        METHOD
 
-        # PASO B: APLICAR PARCHE. Solo si no está aplicado y el código está limpio.
-        # IMPORTANTE: Usamos \& para escapar el ampersand en el comando sed.
-        if ! grep -q "pluck(:Number).map" app/models/shipping_reference.rb; then
-          sed -i 's/pluck(:Number)/pluck(:Number).map(\&:to_s).map(\&:squish)/g' app/models/shipping_reference.rb
-        fi
+        # Expresión regular para encontrar el bloque 'def search_data ... end' original
+        # Busca desde 'def search_data' hasta el 'end' que cierra el método.
+        regex = /^\s*def search_data\s*$.*?^\s*end\s*$/m
+
+        if content.match?(regex)
+          # Reemplazamos el bloque viejo (o roto) con el nuevo bloque seguro
+          new_content = content.sub(regex, safe_method.strip.gsub(/^/, '  ')) 
+          File.write(file_path, new_content)
+          puts "PATCH SUCCESS: search_data method overwritten cleanly."
+        else
+          # Fallback: Si el regex no casa (archivo muy modificado), verificamos si ya tiene el código seguro
+          if content.include?("first.to_s.squish") && content.include?("map(&:squish)")
+            puts "PATCH SKIP: File already secure."
+          else
+            puts "PATCH WARNING: Could not find method block to replace."
+          end
+        end
+        RUBYEOF
+
+        # Ejecutamos el parche usando el entorno Ruby de la app
+        export PATH="/home/deploy/.rbenv/bin:/home/deploy/.rbenv/shims:$PATH"
+        eval "$(rbenv init -)"
+        ruby patch_shipping_reference.rb
       args:
         chdir: "/home/deploy/{{ app }}/current"
       # Solo ejecutamos esto si la clase es ShippingReference
       when: class_to_reindex == 'ShippingReference'
-      ignore_errors: yes 
 
     # 4. EJECUCIÓN (Super Segura: BATCH 50 + UTF-8)
     - name: "4. Reindexing {{ class_to_reindex }} for {{ env }}"
