@@ -4,15 +4,11 @@
   become: yes
   become_user: deploy
   gather_facts: yes
-  # GARANTÍA: Ejecuta solo en 1 servidor. Al ser índice compartido, basta con uno.
+  # GARANTÍA: Ejecuta solo en 1 servidor.
   run_once: true
 
   tasks:
-    # -------------------------------------------------------------------------
-    # 1. PREPARACIÓN DE VARIABLES
-    # -------------------------------------------------------------------------
-    
-    # Normalizamos el código de compañía (quita corchetes si AWX los envía)
+    # 1. Normalización
     - name: "1. Normalizar código de compañía"
       set_fact:
         clean_tenant: >-
@@ -24,7 +20,7 @@
           ''
           {%- endif -%}
 
-    # Validamos que se haya seleccionado algo
+    # 2. Validación
     - name: "2. Validar datos de entrada"
       fail:
         msg: "ERROR: Faltan datos. Asegúrese de seleccionar Compañía y Clase en el Survey."
@@ -32,25 +28,30 @@
         - clean_tenant == '' or clean_tenant is undefined
         - target_class is undefined or target_class == ''
 
-    # Configuramos las variables para el comando
+    # 3. Configuración
     - name: "3. Configurar entorno de ejecución"
       set_fact:
         app: "erp-{{ clean_tenant }}"
         env: "{{ clean_tenant }}"
-        # target_class viene directo del nuevo Survey (ej. ShippingReference)
         class_to_reindex: "{{ target_class }}"
 
-    # -------------------------------------------------------------------------
-    # 2. EJECUCIÓN "LEGACY" (La versión rápida y probada)
-    # -------------------------------------------------------------------------
-    
+    # --- NUEVO PASO: AUTO-REPARACIÓN DE CÓDIGO ---
+    # Este paso corrige el bug en ShippingReference que causa el crash por usuarios borrados.
+    # Cambia 'User.find(user_id)' (estricto) por 'User.find_by(id: user_id).try(:fname)' (seguro).
+    - name: "3.5 Hotfix: Parchear bug de usuario no encontrado (ShippingReference)"
+      command: >-
+        sed -i 's/User.find(user_id).fname/User.find_by(id: user_id).try(:fname)/g' app/models/shipping_reference.rb
+      args:
+        chdir: "/home/deploy/{{ app }}/current"
+      # Solo ejecutamos esto si la clase es ShippingReference, aunque no hace daño correrlo siempre.
+      when: class_to_reindex == 'ShippingReference'
+      ignore_errors: yes 
+
+    # 4. EJECUCIÓN
     - name: "4. Reindexing {{ class_to_reindex }} for {{ env }}"
-      # Usamos /bin/bash -l -c para cargar el perfil completo de 'deploy'.
-      # Esto replica exactamente tu prueba manual exitosa en el servidor.
       command: >-
         /bin/bash -l -c 'cd /home/deploy/{{app}}/current && bundle exec rake RAILS_ENV={{env}} searchkick:reindex CLASS={{class_to_reindex}}'
       environment:
-        # PATH idéntico al Tower antiguo para máxima compatibilidad
         PATH: "/home/deploy/.rbenv/plugins/ruby-build/bin:/home/deploy/.rbenv/bin:/home/deploy/.rbenv/plugins/ruby-build/bin:/home/deploy/.rbenv/shims:/home/deploy/.rbenv/bin:/usr/local/sbin:/usr/local/bin:/usr/local/sbin:/usr/bin:/sbin:/bin:/usr/games"
       register: reindex_result
 
